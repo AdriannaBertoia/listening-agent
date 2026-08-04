@@ -1,49 +1,15 @@
 {
-  "last_updated": "2026-08-03 19:57:17 PST",
+  "last_updated": "2026-08-04 09:28:22 PST",
   "agent": {
     "running": true,
-    "pid": 73195
+    "pid": 84082
   },
-  "today": "2026-08-03",
-  "day_of_week": "Monday",
+  "today": "2026-08-04",
+  "day_of_week": "Tuesday",
   "activity": {
-    "meetings": [
-      {
-        "start": "2026-08-03 11:02:34",
-        "app": "Microsoft Teams",
-        "end": "2026-08-03 11:31:55",
-        "duration": 1761
-      },
-      {
-        "start": "2026-08-03 11:35:33",
-        "app": "Microsoft Teams",
-        "end": "2026-08-03 12:22:18",
-        "duration": 2805
-      },
-      {
-        "start": "2026-08-03 12:22:55",
-        "app": "Microsoft Teams",
-        "end": "2026-08-03 12:48:28",
-        "duration": 1533
-      },
-      {
-        "start": "2026-08-03 14:21:59",
-        "app": "Microsoft Teams",
-        "end": "2026-08-03 14:36:44",
-        "duration": 885
-      }
-    ],
-    "chunks_recorded": 1,
+    "meetings": [],
+    "chunks_recorded": 0,
     "recordings_on_disk": 1,
-    "errors": [
-      {
-        "time": "15:04:00",
-        "message": "src.transcriber: Audio file not found: /Users/abertoia/AI Brain Dump/listening-agent/data/recordings"
-      },
-      {
-        "time": "18:00:21",
-        "message": "src.calendar_client: Failed to fetch calendar: <urlopen error [Errno 8] nodename nor servname provid"
-      }
-    ]
+    "errors": []
   }
 }
