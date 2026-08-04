@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Listening Agent</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            padding: 24px;
+            min-height: 100vh;
+        }
+        h1 { font-size: 1.8rem; color: #fff; margin-bottom: 4px; }
+        .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 24px; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #2a2a4a;
+        }
+        .card h2 {
+            font-size: 0.85rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        .status-running {
+            background: rgba(46, 213, 115, 0.15);
+            color: #2ed573;
+            border: 1px solid rgba(46, 213, 115, 0.3);
+        }
+        .status-stopped {
+            background: rgba(255, 71, 87, 0.15);
+            color: #ff4757;
+            border: 1px solid rgba(255, 71, 87, 0.3);
+        }
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .dot-green { background: #2ed573; }
+        .dot-red { background: #ff4757; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .big-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #fff;
+        }
+        .big-label {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 4px;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: #888; }
+        .stat-value { font-weight: 600; color: #fff; }
+        .meeting-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .meeting-item:last-child { border-bottom: none; }
+        .meeting-time { font-size: 0.85rem; color: #888; }
+        .meeting-duration { font-size: 0.85rem; color: #2ed573; }
+        .error-item {
+            padding: 6px 0;
+            font-size: 0.8rem;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .error-time { color: #888; margin-right: 8px; }
+        .error-msg { color: #ff6b6b; }
+        .updated {
+            text-align: center;
+            color: #555;
+            font-size: 0.8rem;
+            margin-top: 24px;
+        }
+        .empty { color: #555; font-style: italic; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .stale-warning {
+            background: rgba(255, 165, 2, 0.15);
+            color: #ffa502;
+            border: 1px solid rgba(255, 165, 2, 0.3);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Listening Agent</h1>
+            <p class="subtitle" id="date-display">Loading...</p>
+        </div>
+        <div id="status-badge">
+            <span class="status-badge status-stopped">
+                <span class="dot dot-red"></span>
+                Loading...
+            </span>
+        </div>
+    </div>
+
+    <div class="stale-warning" id="stale-warning">
+        Status data is more than 10 minutes old. The agent may not be pushing updates.
+    </div>
+
+    <div class="grid">
+        <!-- Big Stats -->
+        <div class="card" style="text-align: center;">
+            <div class="big-number" id="meeting-count">-</div>
+            <div class="big-label">Meetings Recorded</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div class="big-number" id="chunk-count">-</div>
+            <div class="big-label">Audio Chunks Saved</div>
+        </div>
+        <div class="card" style="text-align: center;">
+            <div class="big-number" id="error-count">-</div>
+            <div class="big-label">Errors</div>
+        </div>
+
+        <!-- Meetings Today -->
+        <div class="card" style="grid-column: span 2;">
+            <h2>Meetings Today</h2>
+            <div id="meetings-list">
+                <p class="empty">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Errors -->
+        <div class="card">
+            <h2>Recent Errors</h2>
+            <div id="errors-list">
+                <p class="empty">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <p class="updated" id="updated-text">Last updated: loading...</p>
+
+    <script>
+        async function loadStatus() {
+            try {
+                const res = await fetch('status.json?t=' + Date.now());
+                if (!res.ok) {
+                    document.getElementById('status-badge').innerHTML = `
+                        <span class="status-badge status-stopped">
+                            <span class="dot dot-red"></span>
+                            No status data
+                        </span>`;
+                    return;
+                }
+                const data = await res.json();
+                render(data);
+            } catch (e) {
+                document.getElementById('status-badge').innerHTML = `
+                    <span class="status-badge status-stopped">
+                        <span class="dot dot-red"></span>
+                        Failed to load
+                    </span>`;
+            }
+        }
+
+        function render(data) {
+            // Date
+            document.getElementById('date-display').textContent =
+                data.day_of_week + ', ' + data.today;
+
+            // Status badge
+            if (data.agent.running) {
+                document.getElementById('status-badge').innerHTML = `
+                    <span class="status-badge status-running">
+                        <span class="dot dot-green"></span>
+                        Running (PID ${data.agent.pid})
+                    </span>`;
+            } else {
+                document.getElementById('status-badge').innerHTML = `
+                    <span class="status-badge status-stopped">
+                        <span class="dot dot-red"></span>
+                        Stopped
+                    </span>`;
+            }
+
+            // Big numbers
+            document.getElementById('meeting-count').textContent =
+                data.activity.meetings.length;
+            document.getElementById('chunk-count').textContent =
+                data.activity.chunks_recorded;
+            document.getElementById('error-count').textContent =
+                data.activity.errors.length;
+
+            // Meetings list
+            const meetingsEl = document.getElementById('meetings-list');
+            if (data.activity.meetings.length === 0) {
+                meetingsEl.innerHTML = '<p class="empty">No meetings recorded today</p>';
+            } else {
+                meetingsEl.innerHTML = data.activity.meetings.map(m => {
+                    const startTime = m.start ? m.start.split(' ')[1] : '?';
+                    const endTime = m.end ? m.end.split(' ')[1] : '?';
+                    const mins = m.duration ? Math.round(m.duration / 60) : '?';
+                    return `<div class="meeting-item">
+                        <span class="meeting-time">${startTime} - ${endTime}</span>
+                        <span class="meeting-duration">${mins} min</span>
+                    </div>`;
+                }).join('');
+            }
+
+            // Errors
+            const errorsEl = document.getElementById('errors-list');
+            if (data.activity.errors.length === 0) {
+                errorsEl.innerHTML = '<p class="empty">No errors today</p>';
+            } else {
+                errorsEl.innerHTML = data.activity.errors.map(e =>
+                    `<div class="error-item">
+                        <span class="error-time">${e.time}</span>
+                        <span class="error-msg">${e.message}</span>
+                    </div>`
+                ).join('');
+            }
+
+            // Updated time
+            document.getElementById('updated-text').textContent =
+                'Last updated: ' + data.last_updated;
+
+            // Stale check (> 10 min old)
+            // Simple check: if the page was loaded and data is from a different day
+            const today = new Date().toISOString().split('T')[0];
+            if (data.today !== today) {
+                document.getElementById('stale-warning').style.display = 'block';
+            }
+        }
+
+        // Load on page open
+        loadStatus();
+
+        // Refresh every 5 minutes
+        setInterval(loadStatus, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
