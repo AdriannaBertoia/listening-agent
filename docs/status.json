@@ -1,11 +1,16 @@
 {
-  "last_updated": "2026-08-04 09:28:22 PST",
+  "last_updated": "2026-08-04 09:33:15 PST",
   "agent": {
     "running": true,
     "pid": 84082
   },
   "today": "2026-08-04",
   "day_of_week": "Tuesday",
+  "recording": {
+    "recording": false,
+    "since": null,
+    "elapsed_seconds": null
+  },
   "activity": {
     "meetings": [],
     "chunks_recorded": 0,
