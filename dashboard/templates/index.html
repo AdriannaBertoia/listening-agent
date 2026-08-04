@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Listening Agent Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            padding: 24px;
+            min-height: 100vh;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #2a2a4a;
+        }
+        .card h2 {
+            font-size: 1rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .status-running {
+            background: rgba(46, 213, 115, 0.15);
+            color: #2ed573;
+            border: 1px solid rgba(46, 213, 115, 0.3);
+        }
+        .status-stopped {
+            background: rgba(255, 71, 87, 0.15);
+            color: #ff4757;
+            border: 1px solid rgba(255, 71, 87, 0.3);
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .dot-green { background: #2ed573; }
+        .dot-red { background: #ff4757; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: #888; }
+        .stat-value { font-weight: 600; color: #fff; }
+        .meeting-list {
+            list-style: none;
+        }
+        .meeting-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .meeting-item:last-child { border-bottom: none; }
+        .meeting-time {
+            font-size: 0.85rem;
+            color: #888;
+            min-width: 120px;
+        }
+        .meeting-app {
+            font-size: 0.8rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(99, 110, 255, 0.15);
+            color: #636eff;
+        }
+        .meeting-duration {
+            font-size: 0.85rem;
+            color: #2ed573;
+            min-width: 60px;
+            text-align: right;
+        }
+        .meeting-short {
+            color: #888;
+            font-style: italic;
+        }
+        .note-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .note-item:last-child { border-bottom: none; }
+        .note-title {
+            font-weight: 500;
+            color: #e0e0e0;
+            margin-bottom: 2px;
+        }
+        .note-meta {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        .retain-badge {
+            font-size: 0.7rem;
+            background: rgba(255, 165, 2, 0.2);
+            color: #ffa502;
+            padding: 1px 6px;
+            border-radius: 3px;
+            margin-left: 6px;
+        }
+        .error-item {
+            padding: 6px 0;
+            font-size: 0.8rem;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .error-time { color: #888; margin-right: 8px; }
+        .error-msg { color: #ff6b6b; }
+        .log-box {
+            background: #0f0f23;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #aaa;
+        }
+        .empty { color: #666; font-style: italic; }
+        .refresh-btn {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #636eff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .refresh-btn:hover { background: #4f5bd5; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .auto-refresh {
+            font-size: 0.8rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Listening Agent</h1>
+            <p class="subtitle">{{ today }}</p>
+        </div>
+        <div>
+            {% if status.running %}
+            <span class="status-badge status-running">
+                <span class="dot dot-green"></span>
+                Running (PID {{ status.pid }})
+            </span>
+            {% else %}
+            <span class="status-badge status-stopped">
+                <span class="dot dot-red"></span>
+                Stopped
+            </span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- Today's Stats -->
+        <div class="card">
+            <h2>Today's Activity</h2>
+            <div class="stat-row">
+                <span class="stat-label">Meetings detected</span>
+                <span class="stat-value">{{ activity.meetings | length }}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Chunks recorded</span>
+                <span class="stat-value">{{ activity.chunks_recorded }}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Recordings on disk</span>
+                <span class="stat-value">{{ recordings | length }}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Errors today</span>
+                <span class="stat-value">{{ activity.errors | length }}</span>
+            </div>
+        </div>
+
+        <!-- Meetings Today -->
+        <div class="card">
+            <h2>Meetings Today</h2>
+            {% if activity.meetings %}
+            <ul class="meeting-list">
+                {% for m in activity.meetings %}
+                <li class="meeting-item">
+                    <span class="meeting-time">{{ m.start.split(' ')[1] if m.start else '?' }} - {{ m.end.split(' ')[1] if m.end else '?' }}</span>
+                    <span class="meeting-app">{{ m.app }}</span>
+                    {% if m.duration and m.duration >= 120 %}
+                    <span class="meeting-duration">{{ (m.duration // 60) }}m</span>
+                    {% elif m.duration %}
+                    <span class="meeting-duration meeting-short">{{ m.duration }}s (skipped)</span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="empty">No meetings detected today</p>
+            {% endif %}
+        </div>
+
+        <!-- Recent Meeting Notes -->
+        <div class="card">
+            <h2>Recent Meeting Notes</h2>
+            {% if meeting_notes %}
+            {% for note in meeting_notes %}
+            <div class="note-item">
+                <div class="note-title">
+                    {{ note.title }}
+                    {% if note.retain %}<span class="retain-badge">retained</span>{% endif %}
+                </div>
+                <div class="note-meta">{{ note.date }}</div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="empty">No meeting notes yet</p>
+            {% endif %}
+        </div>
+
+        <!-- Errors -->
+        <div class="card">
+            <h2>Recent Errors</h2>
+            {% if activity.errors %}
+            {% for err in activity.errors %}
+            <div class="error-item">
+                <span class="error-time">{{ err.time }}</span>
+                <span class="error-msg">{{ err.message }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="empty">No errors today</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Log Tail -->
+    <div class="card">
+        <h2>Live Log (last 30 lines)</h2>
+        <div class="log-box" id="log-content">Loading...</div>
+    </div>
+
+    <button class="refresh-btn" onclick="refreshAll()">Refresh</button>
+
+    <script>
+        async function refreshLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+                document.getElementById('log-content').textContent = data.logs;
+                // Auto-scroll to bottom
+                const box = document.getElementById('log-content');
+                box.scrollTop = box.scrollHeight;
+            } catch (e) {
+                document.getElementById('log-content').textContent = 'Failed to fetch logs';
+            }
+        }
+
+        function refreshAll() {
+            window.location.reload();
+        }
+
+        // Load logs on page load
+        refreshLogs();
+
+        // Auto-refresh logs every 10 seconds
+        setInterval(refreshLogs, 10000);
+
+        // Auto-refresh full page every 60 seconds
+        setTimeout(() => window.location.reload(), 60000);
+    </script>
+</body>
+</html>
