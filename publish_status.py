@@ -97,6 +97,54 @@ def get_recordings_count() -> int:
     return len(list(RECORDINGS_DIR.glob("chunk_*.wav")))
 
 
+def is_currently_recording() -> dict:
+    """Check if a meeting is currently being recorded by reading the log tail."""
+    today_str = date.today().strftime("%Y-%m-%d")
+
+    if not LOG_PATH.exists():
+        return {"recording": False, "since": None, "app": None}
+
+    # Read the last 100 lines to find the most recent state
+    try:
+        with open(LOG_PATH) as f:
+            lines = f.readlines()
+
+        # Walk backwards through today's lines to find last meeting start/end
+        last_start = None
+        last_end = None
+
+        for line in reversed(lines):
+            if today_str not in line:
+                continue
+
+            if not last_end and "Meeting ended" in line:
+                last_end = line
+                break  # Most recent event is an end — not recording
+            elif not last_start and ("Meeting confirmed" in line or "Recording started" in line):
+                last_start = line
+                break  # Most recent event is a start — currently recording
+
+        if last_start and not last_end:
+            time_match = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", last_start)
+            since = time_match.group(1) if time_match else None
+
+            # Calculate duration
+            elapsed = None
+            if since:
+                try:
+                    start_dt = datetime.strptime(since, "%Y-%m-%d %H:%M:%S")
+                    elapsed = int((datetime.now() - start_dt).total_seconds())
+                except ValueError:
+                    pass
+
+            return {"recording": True, "since": since, "elapsed_seconds": elapsed}
+
+    except Exception:
+        pass
+
+    return {"recording": False, "since": None, "elapsed_seconds": None}
+
+
 def publish():
     """Build and write status.json."""
     status = get_agent_status()
@@ -110,6 +158,7 @@ def publish():
         },
         "today": date.today().strftime("%Y-%m-%d"),
         "day_of_week": date.today().strftime("%A"),
+        "recording": is_currently_recording(),
         "activity": {
             "meetings": activity["meetings"],
             "chunks_recorded": activity["chunks_recorded"],

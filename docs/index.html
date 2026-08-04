@@ -125,6 +125,43 @@
             font-size: 0.85rem;
             display: none;
         }
+        .recording-banner {
+            background: rgba(255, 56, 56, 0.1);
+            border: 1px solid rgba(255, 56, 56, 0.4);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .recording-pulse {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #ff3838;
+            animation: rec-pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes rec-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(255, 56, 56, 0.7); }
+            50% { transform: scale(1.1); opacity: 0.8; box-shadow: 0 0 12px 4px rgba(255, 56, 56, 0.4); }
+        }
+        .recording-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .recording-label {
+            font-weight: 700;
+            font-size: 1rem;
+            color: #ff3838;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .recording-elapsed {
+            font-size: 0.85rem;
+            color: #888;
+        }
     </style>
 </head>
 <body>
@@ -143,6 +180,15 @@
 
     <div class="stale-warning" id="stale-warning">
         Status data is more than 10 minutes old. The agent may not be pushing updates.
+    </div>
+
+    <!-- Recording Banner -->
+    <div class="recording-banner" id="recording-banner" style="display: none;">
+        <div class="recording-pulse"></div>
+        <div class="recording-text">
+            <span class="recording-label">Recording in progress</span>
+            <span class="recording-elapsed" id="recording-elapsed"></span>
+        </div>
     </div>
 
     <div class="grid">
@@ -203,6 +249,21 @@
         }
 
         function render(data) {
+            // Recording banner
+            const recBanner = document.getElementById('recording-banner');
+            const recElapsed = document.getElementById('recording-elapsed');
+            if (data.recording && data.recording.recording) {
+                recBanner.style.display = 'flex';
+                if (data.recording.elapsed_seconds) {
+                    const mins = Math.floor(data.recording.elapsed_seconds / 60);
+                    recElapsed.textContent = `Recording for ${mins} minute${mins !== 1 ? 's' : ''}`;
+                } else {
+                    recElapsed.textContent = '';
+                }
+            } else {
+                recBanner.style.display = 'none';
+            }
+
             // Date
             document.getElementById('date-display').textContent =
                 data.day_of_week + ', ' + data.today;

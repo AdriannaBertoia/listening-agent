@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.listening-agent-publish</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/abertoia/AI Brain Dump/listening-agent/venv/bin/python</string>
+        <string>/Users/abertoia/AI Brain Dump/listening-agent/publish_status.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/abertoia/AI Brain Dump/listening-agent</string>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/abertoia/AI Brain Dump/listening-agent/publish.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/abertoia/AI Brain Dump/listening-agent/publish.log</string>
+</dict>
+</plist>
