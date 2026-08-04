@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-04 15:04:02 PST",
+  "last_updated": "2026-08-04 15:09:05 PST",
   "agent": {
     "running": true,
     "pid": 11493
@@ -9,7 +9,7 @@
   "recording": {
     "recording": true,
     "since": "2026-08-04 14:05:19",
-    "elapsed_seconds": 3524
+    "elapsed_seconds": 3826
   },
   "activity": {
     "meetings": [
@@ -27,7 +27,7 @@
       }
     ],
     "chunks_recorded": 18,
-    "recordings_on_disk": 19,
+    "recordings_on_disk": 0,
     "errors": [
       {
         "time": "09:49:44",
