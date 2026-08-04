@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-04 09:41:33 PST",
+  "last_updated": "2026-08-04 09:46:35 PST",
   "agent": {
     "running": true,
     "pid": 84082
@@ -9,12 +9,33 @@
   "recording": {
     "recording": true,
     "since": "2026-08-04 09:33:51",
-    "elapsed_seconds": 462
+    "elapsed_seconds": 764
   },
   "activity": {
     "meetings": [],
-    "chunks_recorded": 1,
-    "recordings_on_disk": 2,
-    "errors": []
+    "chunks_recorded": 2,
+    "recordings_on_disk": 3,
+    "errors": [
+      {
+        "time": "09:46:11",
+        "message": "src.transcriber: Transcription failed for chunk_20260804_093351.wav: [Errno 2] No such file or direc"
+      },
+      {
+        "time": "09:46:16",
+        "message": "src.transcriber: Transcription failed for chunk_20260804_093351.wav: [Errno 2] No such file or direc"
+      },
+      {
+        "time": "09:46:22",
+        "message": "src.transcriber: Transcription failed for chunk_20260804_093351.wav: [Errno 2] No such file or direc"
+      },
+      {
+        "time": "09:46:27",
+        "message": "src.transcriber: Transcription failed for chunk_20260804_093351.wav: [Errno 2] No such file or direc"
+      },
+      {
+        "time": "09:46:32",
+        "message": "src.transcriber: Transcription failed for chunk_20260804_093351.wav: [Errno 2] No such file or direc"
+      }
+    ]
   }
 }
