@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-04 12:56:59 PST",
+  "last_updated": "2026-08-04 13:02:01 PST",
   "agent": {
     "running": true,
     "pid": 11493
@@ -7,9 +7,9 @@
   "today": "2026-08-04",
   "day_of_week": "Tuesday",
   "recording": {
-    "recording": true,
-    "since": "2026-08-04 12:41:37",
-    "elapsed_seconds": 922
+    "recording": false,
+    "since": null,
+    "elapsed_seconds": null
   },
   "activity": {
     "meetings": [
@@ -18,10 +18,16 @@
         "app": "Microsoft Teams",
         "end": "2026-08-04 09:49:10",
         "duration": 930
+      },
+      {
+        "start": "2026-08-04 12:41:25",
+        "app": "Microsoft Teams",
+        "end": "2026-08-04 13:01:46",
+        "duration": 1221
       }
     ],
-    "chunks_recorded": 5,
-    "recordings_on_disk": 6,
+    "chunks_recorded": 7,
+    "recordings_on_disk": 8,
     "errors": [
       {
         "time": "09:49:44",
