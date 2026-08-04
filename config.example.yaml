@@ -1,0 +1,85 @@
+# Listening Agent Configuration
+# =============================
+# Copy this to config.yaml and fill in your values.
+
+# User identity — helps the AI know which action items are yours
+user:
+  name: "Your Name"
+  aliases: ["FirstName", "LastName"]
+  work_start: "09:00"
+  work_end: "16:00"
+
+# Calendar integration — ICS feed for meeting context
+calendar:
+  ics_url: "https://your-calendar-ics-url-here"
+  refresh_interval: 300
+  match_tolerance_minutes: 10
+
+# Obsidian vault settings
+obsidian:
+  vault_path: "/path/to/your/obsidian/vault"
+  daily_notes_folder: "06_Daily Notes"
+  meetings_folder: "07_Meetings"
+
+# Audio recording settings
+recording:
+  chunk_duration: 300
+  format: "wav"
+  sample_rate: 16000
+  capture_system_audio: true
+  system_audio_device: "BlackHole 2ch"
+  mic_device: null
+
+# Process detection - which apps trigger recording
+detection:
+  watched_apps:
+    - "Microsoft Teams"
+    - "zoom.us"
+  poll_interval: 5
+
+# Transcription settings
+transcription:
+  model: "small"
+  language: "en"
+  diarization:
+    enabled: true
+    hf_token: "hf_YOUR_TOKEN_HERE"
+    min_speakers: null
+    max_speakers: null
+
+# Synthesis settings
+synthesis:
+  schedule_time: "15:00"
+  timezone: "America/Los_Angeles"
+  llm_provider: "ollama"
+  gemini_api_key: "YOUR_GEMINI_API_KEY"
+  ollama_model: "llama3.1:8b"
+  cleanup_after_synthesis: true
+
+# Meeting notes settings
+meeting_notes:
+  retention_days: 30
+  minimum_duration: 120
+  notify: true
+  memory_lookback: 3
+  similarity_threshold: 0.7
+  open_for_review: true
+
+# Next-day note generation
+next_day_note:
+  enabled: true
+  edtech_brief: true
+  notify: true
+  recurring_todos:
+    monday:
+      - "09:00|Create Momentum Report (send blank copy)"
+    tuesday:
+      - "10:00|Deep Focus — Momentum Report executive summary (30 min)"
+      - "13:00|Send Momentum Report"
+    friday:
+      - "Input Time on the Timesheet"
+
+# Logging
+logging:
+  level: "INFO"
+  file: "listening-agent.log"

@@ -1,0 +1,9 @@
+whisperx>=3.1.0
+pyyaml==6.0.1
+schedule==1.2.2
+psutil==5.9.8
+google-generativeai==0.8.3
+sounddevice==0.4.7
+soundfile==0.12.1
+numpy>=1.26.4
+icalendar==6.1.0

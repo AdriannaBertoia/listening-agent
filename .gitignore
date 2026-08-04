@@ -1,0 +1,34 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Audio data (ephemeral — recordings and transcripts are temporary)
+data/recordings/
+data/transcripts/
+
+# Meeting memory (local state)
+data/meeting_memory/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+.Trash/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment / secrets
+.env
+config.yaml
+
+# Test files
+test_recording.wav
+test_audio.py
