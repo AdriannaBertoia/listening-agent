@@ -86,10 +86,10 @@ class CalendarClient:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 raw = resp.read()
 
-            cal = Calendar.from_ical(raw)
-            self._events = self._parse_todays_events(cal)
+            self._raw_ics = raw
+            today = datetime.now(self.timezone).date()
+            self._events = self._parse_events_fast(raw, today)
             self._last_fetched = datetime.now(self.timezone)
-            self._raw_ics = raw  # Cache for get_events_for_date
             logger.info(f"Calendar refreshed — {len(self._events)} event(s) today")
 
         except Exception as e:
@@ -170,7 +170,7 @@ class CalendarClient:
     def get_events_for_date(self, target_date) -> list[CalendarEvent]:
         """
         Public method to get events for any date.
-        Uses cached ICS data if available, otherwise re-fetches.
+        Uses cached raw ICS data with pre-filtering for speed.
         """
         self._ensure_fresh()
 
@@ -190,11 +190,57 @@ class CalendarClient:
                     raw = resp.read()
                 self._raw_ics = raw
 
-            cal = Calendar.from_ical(raw)
-            return self._parse_events_for_date(cal, target_date)
+            return self._parse_events_fast(raw, target_date)
         except Exception as e:
             logger.error(f"Failed to fetch calendar for date {target_date}: {e}")
             return []
+
+    def _parse_events_fast(self, raw_ics: bytes, target_date) -> list[CalendarEvent]:
+        """
+        Fast event parsing using text pre-filter.
+        Only parses VEVENT blocks that contain the target date string,
+        avoiding full parse of 1000+ event calendar histories.
+        """
+        date_str = target_date.strftime("%Y%m%d")  # e.g. "20260804"
+        text = raw_ics.decode("utf-8", errors="replace")
+
+        # Extract VEVENT blocks containing our target date
+        matching_blocks = []
+        current_event = []
+        in_event = False
+
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped == "BEGIN:VEVENT":
+                in_event = True
+                current_event = [line]
+            elif stripped == "END:VEVENT":
+                current_event.append(line)
+                event_text = "\n".join(current_event)
+                if date_str in event_text:
+                    matching_blocks.append(event_text)
+                in_event = False
+                current_event = []
+            elif in_event:
+                current_event.append(line)
+
+        # Parse only matching events
+        events = []
+        for block in matching_blocks:
+            ics_wrapper = f"BEGIN:VCALENDAR\nVERSION:2.0\n{block}\nEND:VCALENDAR\n"
+            try:
+                cal = Calendar.from_ical(ics_wrapper)
+                for component in cal.walk():
+                    if component.name != "VEVENT":
+                        continue
+                    event = self._parse_event(component)
+                    if event.start and event.start.date() == target_date:
+                        events.append(event)
+            except Exception as e:
+                logger.debug(f"Skipped unparseable event: {e}")
+
+        events.sort(key=lambda e: e.start or datetime.min.replace(tzinfo=self.timezone))
+        return events
 
     def _parse_event(self, component) -> CalendarEvent:
         """Parse a VEVENT component into a CalendarEvent."""

@@ -104,7 +104,9 @@ def get_todays_activity() -> dict:
                             current_meeting["duration"] = int(duration)
                         except (ValueError, TypeError):
                             pass
-                    meetings.append(current_meeting)
+                    # Only count meetings that lasted 2+ minutes
+                    if current_meeting.get("duration") and current_meeting["duration"] >= 120:
+                        meetings.append(current_meeting)
                     current_meeting = None
                 elif "Recorded chunk" in line:
                     chunks_recorded += 1
@@ -222,6 +224,52 @@ def api_status():
 def api_logs():
     """JSON endpoint for log tail."""
     return jsonify({"logs": get_log_tail(50)})
+
+
+@app.route("/api/audio-level")
+def api_audio_level():
+    """Sample current audio level from BlackHole (or configured input device)."""
+    try:
+        import sounddevice as sd
+        import numpy as np
+
+        # Find BlackHole device
+        device_name = CONFIG.get("recording", {}).get("system_audio_device", "BlackHole 2ch")
+        device_idx = None
+        devices = sd.query_devices()
+        for i, dev in enumerate(devices):
+            if device_name.lower() in dev["name"].lower() and dev["max_input_channels"] > 0:
+                device_idx = i
+                break
+
+        if device_idx is None:
+            return jsonify({"error": "Device not found", "level": 0, "peak": 0, "active": False})
+
+        # Record a tiny sample (100ms)
+        dev_info = sd.query_devices(device_idx)
+        rate = int(dev_info["default_samplerate"])
+        duration = 0.1  # 100ms
+        samples = int(rate * duration)
+
+        audio = sd.rec(samples, samplerate=rate, channels=1, device=device_idx, dtype="float32")
+        sd.wait()
+
+        peak = float(np.abs(audio).max())
+        rms = float(np.sqrt(np.mean(audio ** 2)))
+        # Normalize to 0-100 scale (peak of 0.5 = 100%)
+        level = min(100, int(rms * 500))
+        peak_pct = min(100, int(peak * 200))
+
+        return jsonify({
+            "level": level,
+            "peak": peak_pct,
+            "raw_peak": round(peak, 6),
+            "raw_rms": round(rms, 6),
+            "active": peak > 0.001,
+            "device": device_name,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e), "level": 0, "peak": 0, "active": False})
 
 
 if __name__ == "__main__":

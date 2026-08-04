@@ -91,23 +91,23 @@ class AudioRecorder:
     def _record_loop(self):
         """Main recording loop — uses InputStream for real-time capture."""
         # Determine which device to use
-        # Priority: BlackHole (system audio loopback) captures Teams/Zoom audio directly.
-        # Fallback: mic device or system default.
-        sys_idx = self._get_device_index(self.system_audio_device)
+        # Priority: system_audio_device (Loopback, BlackHole, etc.) if available and configured.
+        # Fallback: mic device (captures room audio including speakers).
+        # Default: system default input (usually MacBook Pro Microphone).
         mic_idx = self._get_device_index(self.mic_device)
+        sys_idx = self._get_device_index(self.system_audio_device)
 
-        if sys_idx is not None:
-            # Use BlackHole — captures system audio (Teams, Zoom, etc.)
-            # Requires Multi-Output Device in Audio MIDI Setup to route audio
-            # to both speakers/headphones AND BlackHole simultaneously.
+        if sys_idx is not None and self.system_audio_device:
+            # Use virtual audio device (Loopback, BlackHole, etc.)
             device = sys_idx
             device_name = self.system_audio_device
         elif mic_idx is not None:
             device = mic_idx
             device_name = self.mic_device
         else:
+            # Default mic — picks up your voice + speakers in the room
             device = None
-            device_name = "system default"
+            device_name = "system default (mic)"
 
         logger.info(f"Recording from device: {device_name} (index: {device})")
 
