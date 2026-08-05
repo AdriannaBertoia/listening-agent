@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-05 09:29:29 PST",
+  "last_updated": "2026-08-05 09:36:15 PST",
   "agent": {
     "running": true,
     "pid": 11493
@@ -7,9 +7,9 @@
   "today": "2026-08-05",
   "day_of_week": "Wednesday",
   "recording": {
-    "recording": false,
-    "since": null,
-    "elapsed_seconds": null
+    "recording": true,
+    "since": "2026-08-05 09:35:14",
+    "elapsed_seconds": 61
   },
   "activity": {
     "meetings": [],
