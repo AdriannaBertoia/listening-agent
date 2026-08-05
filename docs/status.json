@@ -1,60 +1,20 @@
 {
-  "last_updated": "2026-08-04 16:09:30 PST",
+  "last_updated": "2026-08-05 08:53:03 PST",
   "agent": {
     "running": true,
     "pid": 11493
   },
-  "today": "2026-08-04",
-  "day_of_week": "Tuesday",
+  "today": "2026-08-05",
+  "day_of_week": "Wednesday",
   "recording": {
     "recording": false,
     "since": null,
     "elapsed_seconds": null
   },
   "activity": {
-    "meetings": [
-      {
-        "start": "2026-08-04 09:33:40",
-        "app": "Microsoft Teams",
-        "end": "2026-08-04 09:49:10",
-        "duration": 930
-      },
-      {
-        "start": "2026-08-04 12:41:25",
-        "app": "Microsoft Teams",
-        "end": "2026-08-04 13:01:46",
-        "duration": 1221
-      },
-      {
-        "start": "2026-08-04 14:05:08",
-        "app": "Microsoft Teams",
-        "end": "2026-08-04 16:00:46",
-        "duration": 6938
-      }
-    ],
-    "chunks_recorded": 18,
+    "meetings": [],
+    "chunks_recorded": 0,
     "recordings_on_disk": 0,
-    "errors": [
-      {
-        "time": "09:49:44",
-        "message": "src.transcriber: Transcription failed for chunk_20260804_093906.wav: [Errno 2] No such file or direc"
-      },
-      {
-        "time": "09:49:50",
-        "message": "src.transcriber: Transcription failed for chunk_20260804_093351.wav: [Errno 2] No such file or direc"
-      },
-      {
-        "time": "09:49:50",
-        "message": "src.transcriber: Transcription failed for chunk_20260804_093906.wav: [Errno 2] No such file or direc"
-      },
-      {
-        "time": "09:49:55",
-        "message": "src.transcriber: Transcription failed for chunk_20260804_093351.wav: [Errno 2] No such file or direc"
-      },
-      {
-        "time": "09:49:55",
-        "message": "src.transcriber: Transcription failed for chunk_20260804_093906.wav: [Errno 2] No such file or direc"
-      }
-    ]
+    "errors": []
   }
 }
