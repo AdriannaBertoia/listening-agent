@@ -312,23 +312,93 @@ class ListeningAgent:
         return meetings
 
     def _handle_meeting_start(self):
-        """Called when a meeting is detected."""
+        """Called when a meeting is detected. Shows a popup asking whether to record."""
         app = self.watcher.get_active_meeting_app()
-        logger.info(f"Meeting started in {app}")
+        logger.info(f"Meeting detected in {app}")
         self._meeting_start_time = datetime.now()
 
         # Look up the calendar event for context
         self._current_calendar_event = self.calendar.get_current_event()
         if self._current_calendar_event:
-            logger.info(f"Matched calendar event: {self._current_calendar_event.title}")
+            meeting_title = self._current_calendar_event.title
+            logger.info(f"Matched calendar event: {meeting_title}")
         else:
+            meeting_title = None
             logger.info("No matching calendar event found")
 
-        self.recorder.start()
+        # Show popup asking if user wants to record
+        should_record = self._ask_to_record(meeting_title, app)
+
+        if should_record:
+            self.recorder.start()
+            self._send_notification(
+                title="Recording Started",
+                message=f"Recording: {meeting_title or 'Meeting'}",
+            )
+        else:
+            logger.info("User declined recording")
+            # Reset state so meeting_end doesn't try to generate a note
+            self._meeting_start_time = None
+            self._current_calendar_event = None
+
+    def _ask_to_record(self, meeting_title: str | None, app: str | None) -> bool:
+        """
+        Show a macOS dialog asking the user if they want to record this meeting.
+        Returns True if user clicks Yes, False otherwise.
+        Times out after 15 seconds (defaults to No).
+        """
+        if meeting_title:
+            message = f'"{meeting_title}"\\n\\nRecord this meeting?'
+        else:
+            message = f"Meeting detected in {app or 'Teams'}.\\n\\nRecord this meeting?"
+
+        try:
+            script = (
+                f'display dialog "{message}" '
+                f'buttons {{"Skip", "Record"}} default button "Record" '
+                f'with title "Listening Agent" '
+                f'with icon caution '
+                f'giving up after 15'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+
+            output = result.stdout.strip()
+            logger.debug(f"Dialog result: {output}")
+
+            # User clicked Record, or dialog timed out
+            if "Record" in output:
+                logger.info("User chose to record")
+                return True
+            elif "gave up:true" in output:
+                # Timed out — default to not recording
+                logger.info("Dialog timed out — skipping recording")
+                return False
+            else:
+                logger.info("User chose to skip recording")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.warning("Dialog process timed out")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to show recording dialog: {e}")
+            # If dialog fails, record anyway (don't lose data)
+            return True
 
     def _handle_meeting_end(self):
         """Called when a meeting ends. Generates a per-meeting quadrant note."""
         app = self.watcher.get_active_meeting_app() or "Meeting"
+
+        # If user declined recording, just reset state
+        if not self.recorder.is_recording:
+            logger.info(f"Meeting ended ({app}) — was not being recorded")
+            return
+
         logger.info(f"Meeting ended ({app}) — generating meeting note...")
         self.recorder.stop()
 
@@ -383,8 +453,10 @@ class ListeningAgent:
         # Store this meeting in memory for future recurrence
         self.meeting_memory.store_meeting(meeting_synthesis, calendar_title=meeting_title)
 
-        # Write the meeting note to Obsidian
-        note_path = self.writer.write_meeting_note(meeting_synthesis, app_name=app)
+        # Write the meeting note to Obsidian (include transcript)
+        note_path = self.writer.write_meeting_note(
+            meeting_synthesis, app_name=app, transcript=transcript_text
+        )
 
         if note_path:
             title = meeting_synthesis.get("meeting_title", "Meeting")
@@ -422,7 +494,10 @@ class ListeningAgent:
             transcript_path = Path(self.transcriber.output_dir) / transcript_name
 
             if not transcript_path.exists():
-                self.transcriber.transcribe_file(chunk_path)
+                result = self.transcriber.transcribe_file(chunk_path)
+                # If transcription fails, don't retry every poll cycle
+                if result is None:
+                    break
 
     def _send_notification(self, title: str, message: str):
         """Send a macOS notification via osascript."""

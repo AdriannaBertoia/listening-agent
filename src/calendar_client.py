@@ -105,6 +105,12 @@ class CalendarClient:
         now = datetime.now(self.timezone)
         tolerance = timedelta(minutes=self.match_tolerance_minutes)
 
+        logger.debug(f"Matching current event at {now.strftime('%I:%M %p')} (tolerance: {self.match_tolerance_minutes} min)")
+        logger.debug(f"Events loaded: {len(self._events)}")
+        for e in self._events:
+            if e.start:
+                logger.debug(f"  {e.start.strftime('%I:%M %p')} - {e.end.strftime('%I:%M %p') if e.end else '?'}: {e.title}")
+
         best_match = None
         smallest_gap = timedelta.max
 
@@ -198,31 +204,39 @@ class CalendarClient:
     def _parse_events_fast(self, raw_ics: bytes, target_date) -> list[CalendarEvent]:
         """
         Fast event parsing using text pre-filter.
-        Only parses VEVENT blocks that contain the target date string,
-        avoiding full parse of 1000+ event calendar histories.
+        Only parses VEVENT blocks that contain the target date in DTSTART or DTEND lines,
+        avoiding false matches from UIDs and other metadata.
         """
-        date_str = target_date.strftime("%Y%m%d")  # e.g. "20260804"
+        date_str = target_date.strftime("%Y%m%d")  # e.g. "20260806"
         text = raw_ics.decode("utf-8", errors="replace")
 
-        # Extract VEVENT blocks containing our target date
+        # Extract VEVENT blocks containing our target date in DTSTART/DTEND lines only
         matching_blocks = []
         current_event = []
         in_event = False
+        has_date_in_time_fields = False
 
         for line in text.split("\n"):
             stripped = line.strip()
             if stripped == "BEGIN:VEVENT":
                 in_event = True
                 current_event = [line]
+                has_date_in_time_fields = False
             elif stripped == "END:VEVENT":
                 current_event.append(line)
-                event_text = "\n".join(current_event)
-                if date_str in event_text:
-                    matching_blocks.append(event_text)
+                if has_date_in_time_fields:
+                    matching_blocks.append("\n".join(current_event))
                 in_event = False
                 current_event = []
             elif in_event:
                 current_event.append(line)
+                # Only match date in DTSTART, DTEND, or RECURRENCE-ID lines
+                if date_str in line and any(
+                    line.startswith(prefix) for prefix in ("DTSTART", "DTEND", "RECURRENCE-ID")
+                ):
+                    has_date_in_time_fields = True
+
+        logger.debug(f"Pre-filter: {len(matching_blocks)} events with {date_str} in time fields")
 
         # Parse only matching events
         events = []

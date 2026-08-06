@@ -40,11 +40,12 @@ class ObsidianWriter:
 
         return note_path
 
-    def write_meeting_note(self, meeting_synthesis: dict, app_name: str = "Meeting") -> Path | None:
+    def write_meeting_note(self, meeting_synthesis: dict, app_name: str = "Meeting", transcript: str | None = None) -> Path | None:
         """
         Write a per-meeting note file using the Quadrant (4-Box) method.
         Saves to the meetings folder with a retain flag for auto-cleanup.
         Also links the meeting note from today's daily note.
+        Includes full transcript as a collapsible section if provided.
 
         Returns the path to the created note, or None on failure.
         """
@@ -106,6 +107,19 @@ retain: false
 
 ## My Next Steps
 {my_next_steps if my_next_steps else "- (none)"}
+"""
+
+        # Add collapsible transcript section if provided
+        if transcript:
+            content += f"""
+---
+
+<details>
+<summary><strong>Full Transcript</strong></summary>
+
+{transcript}
+
+</details>
 """
 
         try:
