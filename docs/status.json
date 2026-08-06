@@ -1,8 +1,8 @@
 {
-  "last_updated": "2026-08-06 13:52:35 PST",
+  "last_updated": "2026-08-06 15:18:17 PST",
   "agent": {
     "running": true,
-    "pid": 37135
+    "pid": 45091
   },
   "today": "2026-08-06",
   "day_of_week": "Thursday",
@@ -21,7 +21,7 @@
       }
     ],
     "chunks_recorded": 24,
-    "recordings_on_disk": 24,
+    "recordings_on_disk": 0,
     "errors": []
   }
 }
