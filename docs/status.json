@@ -1,18 +1,25 @@
 {
-  "last_updated": "2026-08-07 08:59:59 PST",
+  "last_updated": "2026-08-07 09:05:01 PST",
   "agent": {
     "running": true,
-    "pid": 65688
+    "pid": 70458
   },
   "today": "2026-08-07",
   "day_of_week": "Friday",
   "recording": {
-    "recording": true,
-    "since": "2026-08-07 08:33:19",
-    "elapsed_seconds": 1600
+    "recording": false,
+    "since": null,
+    "elapsed_seconds": null
   },
   "activity": {
-    "meetings": [],
+    "meetings": [
+      {
+        "start": "2026-08-07 08:33:19",
+        "app": "(active for 30s) \u2014 starting recording",
+        "end": "2026-08-07 09:01:47",
+        "duration": 1708
+      }
+    ],
     "chunks_recorded": 0,
     "recordings_on_disk": 0,
     "errors": []
