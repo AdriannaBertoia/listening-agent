@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-07 11:16:25 PST",
+  "last_updated": "2026-08-07 11:21:27 PST",
   "agent": {
     "running": true,
     "pid": 87406
@@ -9,7 +9,7 @@
   "recording": {
     "recording": true,
     "since": "2026-08-07 11:09:51",
-    "elapsed_seconds": 394
+    "elapsed_seconds": 696
   },
   "activity": {
     "meetings": [
@@ -20,8 +20,13 @@
         "duration": 1708
       }
     ],
-    "chunks_recorded": 1,
-    "recordings_on_disk": 1,
-    "errors": []
+    "chunks_recorded": 2,
+    "recordings_on_disk": 2,
+    "errors": [
+      {
+        "time": "11:20:26",
+        "message": "src.transcriber: Gemini transcription failed for chunk_20260807_110951.wav: <HttpError 400 when requ"
+      }
+    ]
   }
 }
