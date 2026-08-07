@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-07 13:15:02 PST",
+  "last_updated": "2026-08-07 13:20:04 PST",
   "agent": {
     "running": true,
     "pid": 98487
@@ -9,7 +9,7 @@
   "recording": {
     "recording": true,
     "since": "2026-08-07 13:05:14",
-    "elapsed_seconds": 588
+    "elapsed_seconds": 890
   },
   "activity": {
     "meetings": [
