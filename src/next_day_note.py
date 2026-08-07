@@ -206,6 +206,12 @@ class NextDayNoteGenerator:
         # Build the final note from template + LLM output
         content = self._build_note(date_str, llm_output, tomorrow_meetings, edtech_brief)
 
+        # Force-inject recurring items that the LLM may have dropped
+        if carry_forward_todos:
+            recurring_items = [t for t in carry_forward_todos if "[RECURRING]" in t]
+            if recurring_items:
+                content = self._ensure_recurring_items(content, recurring_items)
+
         # Write the note
         try:
             note_path.parent.mkdir(parents=True, exist_ok=True)
@@ -456,6 +462,29 @@ top_priority: {priorities[0] if priorities[0] else ''}
                         items.append(stripped)
 
         return items
+
+    def _ensure_recurring_items(self, content: str, recurring_items: list[str]) -> str:
+        """
+        Ensure all recurring items appear in the Must-do section.
+        If the LLM dropped them, force-add them.
+        """
+        for item in recurring_items:
+            # Check if any version of this item is already in the note
+            # Strip the [RECURRING] prefix for matching
+            clean_item = item.replace("[RECURRING] ", "")
+            if clean_item.lower() not in content.lower() and item.lower() not in content.lower():
+                # Add to Must-do section
+                must_do_marker = "**Must-do:**"
+                if must_do_marker in content:
+                    content = content.replace(
+                        must_do_marker,
+                        f"{must_do_marker}\n- [ ] {item}",
+                    )
+                else:
+                    # Fallback: add before the To-Dos section end
+                    content += f"\n- [ ] {item}\n"
+                logger.info(f"Force-added recurring item: {clean_item}")
+        return content
 
     def _build_meetings_table(self, meetings: list[dict] | None) -> str:
         """Build the meetings table markdown."""
