@@ -12,7 +12,7 @@ import logging
 import subprocess
 import threading
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import yaml
 import schedule
@@ -66,6 +66,8 @@ class ListeningAgent:
             hf_token=diarize_config.get("hf_token", ""),
             min_speakers=diarize_config.get("min_speakers"),
             max_speakers=diarize_config.get("max_speakers"),
+            transcription_provider=self.config["transcription"].get("provider", "whisperx"),
+            gemini_api_key=self.config["synthesis"].get("gemini_api_key", ""),
         )
 
         self.synthesizer = Synthesizer(
@@ -156,6 +158,9 @@ class ListeningAgent:
 
                 # Transcribe completed chunks in the background
                 self._transcribe_pending_chunks()
+
+                # Check for back-to-back meeting transitions
+                self._check_meeting_transition()
 
                 time.sleep(self.config["detection"]["poll_interval"])
 
@@ -478,6 +483,106 @@ class ListeningAgent:
                 logger.info("Personal next steps added to daily note")
         else:
             logger.warning("Failed to generate meeting note")
+
+    def _check_meeting_transition(self):
+        """
+        During active recording, check if the calendar indicates a new meeting
+        should be starting (back-to-back meetings without leaving Teams).
+        
+        If the current calendar event has ended and a new one is starting,
+        prompt the user to split the recording into a new meeting note.
+        """
+        # Only relevant if we're currently recording
+        if not self.recorder.is_recording:
+            return
+
+        # Only check if we had a calendar match
+        if not self._current_calendar_event:
+            return
+
+        now = datetime.now(ZoneInfo(self.config["synthesis"].get("timezone", "America/Los_Angeles")))
+
+        # Has the current calendar event ended?
+        if not self._current_calendar_event.end:
+            return
+
+        event_end = self._current_calendar_event.end
+        # Add a 2-minute grace period (meetings often run over slightly)
+        grace = event_end + timedelta(minutes=2)
+
+        if now <= grace:
+            return  # Current meeting hasn't ended yet
+
+        # Check if there's a new calendar event starting now
+        next_event = self.calendar.get_current_event()
+        if not next_event:
+            return
+
+        # Don't re-trigger for the same event
+        if next_event.title == self._current_calendar_event.title:
+            return
+
+        # New meeting detected! Ask user if they want to split
+        logger.info(f"Back-to-back detected: '{self._current_calendar_event.title}' ended, '{next_event.title}' starting")
+
+        should_split = self._ask_meeting_transition(
+            ended_title=self._current_calendar_event.title,
+            next_title=next_event.title,
+        )
+
+        if should_split:
+            # End the current recording and generate a note
+            logger.info("User chose to split — ending current recording")
+            self._handle_meeting_end()
+
+            # Start a new recording for the next meeting
+            self._meeting_start_time = datetime.now()
+            self._current_calendar_event = next_event
+            self.recorder.start()
+            self._send_notification(
+                title="New Recording Started",
+                message=f"Recording: {next_event.title}",
+            )
+            logger.info(f"Started new recording for: {next_event.title}")
+        else:
+            # User wants to keep it as one recording — update the event reference
+            # so we don't ask again
+            logger.info("User chose to continue as one meeting")
+            self._current_calendar_event = next_event
+
+    def _ask_meeting_transition(self, ended_title: str, next_title: str) -> bool:
+        """
+        Show a popup asking if the user wants to split into a new meeting note.
+        """
+        message = (
+            f'"{ended_title}" has ended.\\n\\n'
+            f'"{next_title}" is starting.\\n\\n'
+            f'Save note and start new recording?'
+        )
+
+        try:
+            script = (
+                f'display dialog "{message}" '
+                f'buttons {{"Keep Together", "Split"}} default button "Split" '
+                f'with title "Listening Agent — New Meeting" '
+                f'with icon caution '
+                f'giving up after 15'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+
+            output = result.stdout.strip()
+            if "Split" in output:
+                return True
+            return False
+
+        except Exception as e:
+            logger.warning(f"Transition dialog failed: {e}")
+            return False
 
     def _transcribe_pending_chunks(self):
         """Transcribe any completed audio chunks that haven't been processed."""

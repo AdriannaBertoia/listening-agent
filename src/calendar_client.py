@@ -70,6 +70,7 @@ class CalendarClient:
         self._events: list[CalendarEvent] = []
         self._last_fetched: datetime | None = None
         self._raw_ics: bytes | None = None
+        self._parsed_cal: Calendar | None = None  # Cached parsed calendar
 
     def refresh(self):
         """Fetch the ICS feed and parse events for today."""
@@ -87,6 +88,11 @@ class CalendarClient:
                 raw = resp.read()
 
             self._raw_ics = raw
+
+            # Parse the full calendar (can be slow for large ICS files)
+            logger.debug("Parsing calendar...")
+            self._parsed_cal = Calendar.from_ical(raw)
+
             today = datetime.now(self.timezone).date()
             self._events = self._parse_events_fast(raw, today)
             self._last_fetched = datetime.now(self.timezone)
@@ -203,57 +209,85 @@ class CalendarClient:
 
     def _parse_events_fast(self, raw_ics: bytes, target_date) -> list[CalendarEvent]:
         """
-        Fast event parsing using text pre-filter.
-        Only parses VEVENT blocks that contain the target date in DTSTART or DTEND lines,
-        avoiding false matches from UIDs and other metadata.
+        Parse events for a specific date, including recurring events.
+        
+        Strategy: pre-filter VEVENT blocks by text matching, then use
+        recurring_ical_events only on the subset that could match.
+        This keeps performance manageable on large (1000+ event) calendars.
         """
+        import recurring_ical_events
+
         date_str = target_date.strftime("%Y%m%d")  # e.g. "20260806"
+        day_abbrev = target_date.strftime("%a").upper()[:2]  # e.g. "TH" for Thursday
         text = raw_ics.decode("utf-8", errors="replace")
 
-        # Extract VEVENT blocks containing our target date in DTSTART/DTEND lines only
-        matching_blocks = []
+        # Pre-filter: keep VEVENT blocks that either:
+        # 1. Have target date in DTSTART/DTEND (one-off events on this day)
+        # 2. Have an RRULE containing this day's abbreviation (e.g. BYDAY=TH)
+        # 3. Have an RRULE with FREQ=DAILY or FREQ=WEEKLY (potential match)
+        candidate_blocks = []
         current_event = []
         in_event = False
-        has_date_in_time_fields = False
+        has_date_match = False
+        has_rrule_match = False
 
         for line in text.split("\n"):
             stripped = line.strip()
             if stripped == "BEGIN:VEVENT":
                 in_event = True
                 current_event = [line]
-                has_date_in_time_fields = False
+                has_date_match = False
+                has_rrule_match = False
             elif stripped == "END:VEVENT":
                 current_event.append(line)
-                if has_date_in_time_fields:
-                    matching_blocks.append("\n".join(current_event))
+                if has_date_match or has_rrule_match:
+                    candidate_blocks.append("\n".join(current_event))
                 in_event = False
                 current_event = []
             elif in_event:
                 current_event.append(line)
-                # Only match date in DTSTART, DTEND, or RECURRENCE-ID lines
+                # Check for direct date match in time fields
                 if date_str in line and any(
-                    line.startswith(prefix) for prefix in ("DTSTART", "DTEND", "RECURRENCE-ID")
+                    line.startswith(p) for p in ("DTSTART", "DTEND", "RECURRENCE-ID")
                 ):
-                    has_date_in_time_fields = True
+                    has_date_match = True
+                # Check for RRULE that could fire on this day
+                if line.startswith("RRULE"):
+                    upper_line = line.upper()
+                    if ("FREQ=DAILY" in upper_line or
+                        "FREQ=WEEKLY" in upper_line or
+                        f"BYDAY={day_abbrev}" in upper_line or
+                        f"BYDAY=" not in upper_line):  # No BYDAY = fires every week
+                        has_rrule_match = True
 
-        logger.debug(f"Pre-filter: {len(matching_blocks)} events with {date_str} in time fields")
+        logger.debug(f"Pre-filter: {len(candidate_blocks)} candidate events for {target_date}")
 
-        # Parse only matching events
+        # Build a mini-calendar from just the candidates and expand recurrences
+        if not candidate_blocks:
+            return []
+
+        mini_ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Listening Agent//EN\n"
+        mini_ics += "\n".join(candidate_blocks)
+        mini_ics += "\nEND:VCALENDAR\n"
+
+        try:
+            mini_cal = Calendar.from_ical(mini_ics)
+            occurrences = recurring_ical_events.of(mini_cal).at(target_date)
+        except Exception as e:
+            logger.error(f"Failed to expand recurring events: {e}")
+            return []
+
         events = []
-        for block in matching_blocks:
-            ics_wrapper = f"BEGIN:VCALENDAR\nVERSION:2.0\n{block}\nEND:VCALENDAR\n"
+        for component in occurrences:
             try:
-                cal = Calendar.from_ical(ics_wrapper)
-                for component in cal.walk():
-                    if component.name != "VEVENT":
-                        continue
-                    event = self._parse_event(component)
-                    if event.start and event.start.date() == target_date:
-                        events.append(event)
+                event = self._parse_event(component)
+                if event.start:
+                    events.append(event)
             except Exception as e:
                 logger.debug(f"Skipped unparseable event: {e}")
 
         events.sort(key=lambda e: e.start or datetime.min.replace(tzinfo=self.timezone))
+        logger.debug(f"Found {len(events)} events for {target_date}")
         return events
 
     def _parse_event(self, component) -> CalendarEvent:

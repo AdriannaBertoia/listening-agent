@@ -1,12 +1,17 @@
 """
 Transcription Module
-Processes audio chunks through WhisperX for speech-to-text with speaker diarization.
-WhisperX provides faster-whisper transcription + word-level timestamps + pyannote
-speaker diarization in a single pipeline.
+Processes audio chunks through WhisperX or Gemini for speech-to-text with speaker diarization.
 
-Falls back to plain faster-whisper if diarization is disabled or unavailable.
+Providers:
+  - "gemini": Uploads audio to Gemini API for fast cloud transcription with speaker labels.
+              Recommended for speed (seconds vs minutes per chunk).
+  - "whisperx": Local WhisperX + pyannote diarization on CPU.
+              Slower but fully private (no data leaves your machine).
+
+Falls back to WhisperX if Gemini fails or is unavailable.
 """
 
+import json
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -15,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class Transcriber:
-    """Transcribes audio files using WhisperX with optional speaker diarization."""
+    """Transcribes audio files using Gemini (fast, cloud) or WhisperX (slow, local)."""
 
     def __init__(
         self,
@@ -26,6 +31,8 @@ class Transcriber:
         hf_token: str = "",
         min_speakers: int | None = None,
         max_speakers: int | None = None,
+        transcription_provider: str = "whisperx",
+        gemini_api_key: str = "",
     ):
         self.model_size = model_size
         self.language = language
@@ -36,6 +43,10 @@ class Transcriber:
         self.hf_token = hf_token
         self.min_speakers = min_speakers
         self.max_speakers = max_speakers
+
+        # Provider selection
+        self.provider = transcription_provider
+        self.gemini_api_key = gemini_api_key
 
         self._model = None
         self._diarize_model = None
@@ -70,16 +81,85 @@ class Transcriber:
 
     def transcribe_file(self, audio_path: str) -> str | None:
         """
-        Transcribe a single audio file with optional speaker diarization.
-        Returns the transcript text (with speaker labels if diarization is on),
-        or None if transcription fails.
+        Transcribe a single audio file.
+        Routes to Gemini (fast cloud) or WhisperX (slow local) based on config.
+        Falls back to WhisperX if Gemini fails.
         """
-        import whisperx
-
         audio_path = Path(audio_path)
         if not audio_path.exists():
             logger.error(f"Audio file not found: {audio_path}")
             return None
+
+        if self.provider == "gemini" and self.gemini_api_key:
+            result = self._transcribe_gemini(audio_path)
+            if result:
+                return result
+            logger.warning("Gemini transcription failed — falling back to WhisperX")
+
+        return self._transcribe_whisperx(audio_path)
+
+    def _transcribe_gemini(self, audio_path: Path) -> str | None:
+        """
+        Transcribe using Gemini API (audio upload).
+        Fast — typically 10-30 seconds for a 5-minute chunk.
+        Returns speaker-labeled transcript text.
+        """
+        try:
+            import google.generativeai as genai
+
+            genai.configure(api_key=self.gemini_api_key)
+            model = genai.GenerativeModel("gemini-2.0-flash")
+
+            logger.info(f"Transcribing via Gemini: {audio_path.name}")
+
+            # Upload the audio file
+            audio_file = genai.upload_file(str(audio_path), mime_type="audio/wav")
+
+            # Request transcription with speaker labels
+            prompt = (
+                "Transcribe this audio with speaker diarization. "
+                "Format each speaker turn as: [SPEAKER_XX] text\n"
+                "Use consistent speaker labels (SPEAKER_01, SPEAKER_02, etc.) throughout. "
+                "Include all speech, even small interjections. "
+                "Do NOT summarize — provide the full verbatim transcript."
+            )
+
+            response = model.generate_content([prompt, audio_file])
+            transcript = response.text.strip()
+
+            if not transcript:
+                logger.debug(f"Gemini returned empty transcript for {audio_path.name}")
+                return None
+
+            # Save transcript to file
+            self._save_transcript_text(audio_path.stem, transcript)
+            logger.info(f"Gemini transcript saved: {audio_path.name} ({len(transcript)} chars)")
+
+            # Clean up uploaded file
+            try:
+                audio_file.delete()
+            except Exception:
+                pass
+
+            return transcript
+
+        except Exception as e:
+            logger.error(f"Gemini transcription failed for {audio_path.name}: {e}")
+            return None
+
+    def _save_transcript_text(self, chunk_name: str, text: str) -> Path:
+        """Save raw transcript text to a file."""
+        transcript_name = f"transcript_{chunk_name.replace('chunk_', '')}.txt"
+        transcript_path = self.output_dir / transcript_name
+        transcript_path.write_text(text)
+        return transcript_path
+
+    def _transcribe_whisperx(self, audio_path: Path) -> str | None:
+        """
+        Transcribe using local WhisperX with optional speaker diarization.
+        Slower but fully private — no data leaves your machine.
+        """
+        import whisperx
 
         try:
             logger.info(f"Transcribing: {audio_path.name}")
