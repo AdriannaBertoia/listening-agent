@@ -27,6 +27,7 @@ from .calendar_client import CalendarClient
 from .meeting_memory import MeetingMemory
 from .next_day_note import NextDayNoteGenerator
 from .edtech_brief import EdTechBrief
+from .weekly_review import WeeklyReviewGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,18 @@ class ListeningAgent:
             ollama_model=self.config["synthesis"].get("ollama_model", "llama3.1"),
         )
 
+        # Weekly review generator (Fridays at 3:30pm)
+        self.weekly_review = WeeklyReviewGenerator(
+            vault_path=self.config["obsidian"]["vault_path"],
+            daily_notes_folder=self.config["obsidian"]["daily_notes_folder"],
+            meetings_folder=self.config["obsidian"]["meetings_folder"],
+            timezone=self.config["synthesis"].get("timezone", "America/Los_Angeles"),
+            llm_provider=self.config["synthesis"]["llm_provider"],
+            gemini_api_key=self.config["synthesis"]["gemini_api_key"],
+            ollama_model=self.config["synthesis"].get("ollama_model", "llama3.1"),
+            user_name=self.config.get("user", {}).get("name", ""),
+        )
+
         # Wire up callbacks
         self.watcher.on_meeting_start(self._handle_meeting_start)
         self.watcher.on_meeting_end(self._handle_meeting_end)
@@ -127,6 +140,8 @@ class ListeningAgent:
         # Track meeting timing
         self._meeting_start_time: datetime | None = None
         self._current_calendar_event = None
+        self._declined_at: datetime | None = None
+        self._declined_event_title: str | None = None
 
     def start(self):
         """Start the listening agent."""
@@ -146,6 +161,10 @@ class ListeningAgent:
         synthesis_time = self.config["synthesis"]["schedule_time"]
         schedule.every().day.at(synthesis_time).do(self.run_synthesis)
         logger.info(f"Synthesis scheduled daily at {synthesis_time}")
+
+        # Schedule weekly review (Fridays at 3:30pm)
+        schedule.every().friday.at("15:30").do(self._run_weekly_review)
+        logger.info("Weekly review scheduled for Fridays at 15:30")
 
         # Main loop: poll for meetings + run scheduled tasks
         try:
@@ -220,6 +239,26 @@ class ListeningAgent:
         """Manual trigger for synthesis (useful for testing)."""
         logger.info("Manual synthesis triggered")
         self.run_synthesis()
+
+    def _run_weekly_review(self):
+        """Generate the weekly review note (Fridays only)."""
+        now = datetime.now()
+        if now.weekday() != 4:  # Only on Fridays
+            return
+
+        logger.info("Generating weekly review...")
+        try:
+            note_path = self.weekly_review.generate()
+            if note_path:
+                logger.info(f"Weekly review saved: {note_path.name}")
+                self._send_notification(
+                    title="Weekly Review Ready",
+                    message="Your week-in-review note is ready in Obsidian",
+                )
+            else:
+                logger.warning("Weekly review generation failed")
+        except Exception as e:
+            logger.error(f"Weekly review error: {e}")
 
     def _generate_next_day_note(self):
         """Generate the next workday's daily note with carry-forward data."""
@@ -345,42 +384,46 @@ class ListeningAgent:
             # Reset state so meeting_end doesn't try to generate a note
             self._meeting_start_time = None
             self._current_calendar_event = None
+            # Track when this decline happened so we can re-prompt later
+            # if a new calendar event starts while Teams stays active
+            self._declined_at = datetime.now()
+            self._declined_event_title = meeting_title
+            # Reset the watcher so it can detect a new meeting later
+            # (e.g. if user stays in Teams but starts a different call)
+            self.watcher.is_in_meeting = False
+            self.watcher._debounce_triggered = False
+            self.watcher._active_since = None
 
     def _ask_to_record(self, meeting_title: str | None, app: str | None) -> bool:
         """
         Show a macOS dialog asking the user if they want to record this meeting.
-        Returns True if user clicks Yes, False otherwise.
-        Times out after 15 seconds (defaults to No).
+        Returns True if user clicks Record, False otherwise.
+        Times out after 15 seconds (defaults to Skip).
+        
+        Uses a helper script launched via 'open' to ensure the dialog appears
+        in the user's GUI session (not the launchd background context).
         """
         if meeting_title:
-            message = f'"{meeting_title}"\\n\\nRecord this meeting?'
+            message = f'"{meeting_title}"'
         else:
-            message = f"Meeting detected in {app or 'Teams'}.\\n\\nRecord this meeting?"
+            message = f"Meeting detected in {app or 'Teams'}"
 
         try:
-            script = (
-                f'display dialog "{message}" '
-                f'buttons {{"Skip", "Record"}} default button "Record" '
-                f'with title "Listening Agent" '
-                f'with icon caution '
-                f'giving up after 15'
-            )
+            script_path = Path(self.config.get("_base_dir", ".")) / "record_prompt.sh"
             result = subprocess.run(
-                ["osascript", "-e", script],
+                ["launchctl", "asuser", str(os.getuid()), str(script_path), message],
                 capture_output=True,
                 text=True,
                 timeout=20,
             )
 
             output = result.stdout.strip()
-            logger.debug(f"Dialog result: {output}")
+            logger.debug(f"Record prompt result: {output}")
 
-            # User clicked Record, or dialog timed out
-            if "Record" in output:
+            if "RECORD" in output:
                 logger.info("User chose to record")
                 return True
-            elif "gave up:true" in output:
-                # Timed out — default to not recording
+            elif "TIMEOUT" in output:
                 logger.info("Dialog timed out — skipping recording")
                 return False
             else:
@@ -388,7 +431,7 @@ class ListeningAgent:
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.warning("Dialog process timed out")
+            logger.warning("Record prompt timed out")
             return False
         except Exception as e:
             logger.error(f"Failed to show recording dialog: {e}")
@@ -434,6 +477,12 @@ class ListeningAgent:
             logger.info("No transcript captured for this meeting — skipping note generation")
             return
 
+        # Map speaker labels to real names using calendar attendees + LLM
+        attendees = []
+        if self._current_calendar_event:
+            attendees = self._current_calendar_event.attendees or []
+        transcript_text = self._map_speaker_names(transcript_text, attendees)
+
         # Synthesize into quadrant format
         calendar_context = None
         if self._current_calendar_event:
@@ -453,6 +502,7 @@ class ListeningAgent:
             transcript_text,
             calendar_context=calendar_context,
             meeting_history=meeting_history,
+            meeting_title=meeting_title,
         )
 
         # Store this meeting in memory for future recurrence
@@ -475,6 +525,11 @@ class ListeningAgent:
                 )
                 # Send a follow-up review prompt after a short delay
                 self._send_review_prompt(note_path, title)
+
+            # Quick edit popup — capture a thought while it's fresh
+            quick_note = self._ask_quick_edit(title)
+            if quick_note:
+                self._append_quick_note(note_path, quick_note)
 
             # Also add personal next steps to daily note To-Dos
             if meeting_synthesis.get("my_next_steps"):
@@ -583,6 +638,160 @@ class ListeningAgent:
         except Exception as e:
             logger.warning(f"Transition dialog failed: {e}")
             return False
+
+    def _map_speaker_names(self, transcript: str, attendees: list[str]) -> str:
+        """
+        Replace generic SPEAKER_XX labels with real names using LLM inference.
+        Uses calendar attendees as hints + context clues from the transcript.
+        Always maps the user (Adrianna) as one of the speakers.
+        """
+        import re
+
+        # Find all unique speaker labels in the transcript
+        speaker_labels = sorted(set(re.findall(r'\[?(SPEAKER_\d+)\]?', transcript)))
+
+        if not speaker_labels:
+            return transcript
+
+        # Build the list of possible participants
+        user_name = self.config.get("user", {}).get("name", "Adrianna Bertoia")
+        participants = [user_name] + [a for a in attendees if a.lower() != user_name.lower()]
+
+        # If only 2 speakers and 1 attendee in a 1:1, we can map directly
+        if len(speaker_labels) == 2 and len(participants) == 2:
+            # Use LLM to figure out which speaker is the user based on context
+            pass  # Let the LLM handle it below
+
+        # If no attendees, just label as "Adrianna" + "Other"
+        if not attendees:
+            participants = [user_name, "Other"]
+
+        # Use LLM to map speakers to names
+        # Take first 2000 chars of transcript as sample for context
+        sample = transcript[:2000]
+
+        prompt = (
+            f"Given this meeting transcript with speaker labels, identify who each speaker is.\n\n"
+            f"Known participants: {', '.join(participants)}\n"
+            f"The user (me) is: {user_name}\n\n"
+            f"Transcript sample:\n{sample}\n\n"
+            f"Speaker labels found: {', '.join(speaker_labels)}\n\n"
+            f"Return ONLY a JSON mapping like: "
+            f'{{"SPEAKER_01": "Adrianna", "SPEAKER_02": "Wendy"}}\n'
+            f"Use first names only. If unsure about a speaker, use the label as-is."
+        )
+
+        try:
+            mapping = self._call_llm_for_speaker_map(prompt)
+            if mapping:
+                for label, name in mapping.items():
+                    transcript = transcript.replace(f"[{label}]", f"[{name}]")
+                    transcript = transcript.replace(f"**{label}**", f"**{name}**")
+                logger.info(f"Speaker names mapped: {mapping}")
+        except Exception as e:
+            logger.warning(f"Speaker name mapping failed: {e}")
+
+        return transcript
+
+    def _call_llm_for_speaker_map(self, prompt: str) -> dict | None:
+        """Call LLM to get speaker name mapping. Returns dict or None."""
+        import json
+
+        if self.config["synthesis"]["llm_provider"] == "gemini":
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=self.config["synthesis"]["gemini_api_key"])
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                response = model.generate_content(prompt)
+                text = response.text.strip()
+                # Extract JSON from response
+                if "{" in text:
+                    json_str = text[text.index("{"):text.rindex("}") + 1]
+                    return json.loads(json_str)
+            except Exception as e:
+                logger.debug(f"Gemini speaker mapping failed: {e}")
+        else:
+            try:
+                import urllib.request
+                payload = json.dumps({
+                    "model": self.config["synthesis"].get("ollama_model", "llama3.1:8b"),
+                    "prompt": prompt,
+                    "stream": False,
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    "http://localhost:11434/api/generate",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                    text = result.get("response", "")
+                    if "{" in text:
+                        json_str = text[text.index("{"):text.rindex("}") + 1]
+                        return json.loads(json_str)
+            except Exception as e:
+                logger.debug(f"Ollama speaker mapping failed: {e}")
+
+        return None
+
+    def _ask_quick_edit(self, meeting_title: str) -> str | None:
+        """
+        Show a text input dialog after a meeting note is generated.
+        Lets the user jot down one quick thought while it's fresh.
+        Returns the text or None if skipped/timed out.
+        """
+        try:
+            script = (
+                'tell application "System Events"\n'
+                '  activate\n'
+                'end tell\n'
+                f'display dialog "Quick thought about \\"{meeting_title}\\"?\\n\\n'
+                f'(Leave blank to skip)" '
+                f'default answer "" '
+                f'buttons {{"Skip", "Add"}} default button "Add" '
+                f'with title "Meeting Note — Quick Edit" '
+                f'giving up after 30'
+            )
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=35,
+            )
+
+            output = result.stdout.strip()
+            if "gave up:true" in output or "Skip" in output:
+                return None
+
+            # Extract the text entered
+            if "text returned:" in output:
+                text = output.split("text returned:")[1].strip().rstrip(",")
+                if text:
+                    logger.info(f"Quick note added: {text[:50]}...")
+                    return text
+
+        except Exception as e:
+            logger.debug(f"Quick edit dialog failed: {e}")
+
+        return None
+
+    def _append_quick_note(self, note_path: Path, note_text: str):
+        """Append a quick note to the meeting note file."""
+        try:
+            content = note_path.read_text()
+            timestamp = datetime.now().strftime("%I:%M %p")
+            addition = f"\n\n---\n\n## Quick Note ({timestamp})\n\n{note_text}\n"
+
+            # Insert before the transcript section if it exists
+            if "<details>" in content:
+                content = content.replace("<details>", f"{addition}\n<details>")
+            else:
+                content += addition
+
+            note_path.write_text(content)
+            logger.info("Quick note appended to meeting note")
+        except Exception as e:
+            logger.warning(f"Failed to append quick note: {e}")
 
     def _transcribe_pending_chunks(self):
         """Transcribe any completed audio chunks that haven't been processed."""

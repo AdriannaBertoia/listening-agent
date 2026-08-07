@@ -173,7 +173,7 @@ class Synthesizer:
         )
         return context
 
-    def synthesize_meeting(self, transcript: str, calendar_context: str | None = None, meeting_history: str | None = None) -> dict:
+    def synthesize_meeting(self, transcript: str, calendar_context: str | None = None, meeting_history: str | None = None, meeting_title: str | None = None) -> dict:
         """
         Process a single meeting's transcript into a quadrant-formatted note.
         Returns a dict with quadrant sections + meeting metadata.
@@ -183,6 +183,11 @@ class Synthesizer:
             return self._empty_meeting_result()
 
         prompt = MEETING_NOTE_PROMPT.format(transcript=transcript) + self._build_user_context()
+
+        # Inject meeting-type-specific guidance
+        meeting_type_guidance = self._get_meeting_type_guidance(meeting_title)
+        if meeting_type_guidance:
+            prompt += meeting_type_guidance
 
         # Inject calendar context if available
         if calendar_context:
@@ -428,3 +433,100 @@ class Synthesizer:
             "my_next_steps": [],
             "raw_output": "",
         }
+
+    def _get_meeting_type_guidance(self, meeting_title: str | None) -> str:
+        """
+        Detect meeting type from title and return type-specific synthesis guidance.
+        This helps the LLM focus on what matters most for each meeting type.
+        """
+        if not meeting_title:
+            return ""
+
+        title_lower = meeting_title.lower()
+
+        # 1:1 meetings — focus on action items, personal development, blockers
+        if "1:1" in title_lower or "1on1" in title_lower or "<>" in meeting_title:
+            return (
+                "\n\nMEETING TYPE: 1:1\n"
+                "Focus especially on:\n"
+                "- Personal action items and commitments from both sides\n"
+                "- Blockers discussed and how to resolve them\n"
+                "- Career development or feedback topics\n"
+                "- Relationship-building context (personal updates shared)\n"
+                "- Any escalations or asks for help\n"
+                "Keep the tone conversational. These notes are private between the two people."
+            )
+
+        # Refinement/grooming — focus on decisions, acceptance criteria, estimates
+        if "refinement" in title_lower or "grooming" in title_lower or "pre-refinement" in title_lower:
+            return (
+                "\n\nMEETING TYPE: Sprint Refinement\n"
+                "Focus especially on:\n"
+                "- Stories/tickets discussed and their acceptance criteria\n"
+                "- Estimates or sizing decisions made\n"
+                "- Questions or blockers that need answers before sprint\n"
+                "- Dependencies identified between teams\n"
+                "- Items moved to backlog vs ready for sprint\n"
+                "Use ticket/story language. Be specific about what was agreed."
+            )
+
+        # Standup/daily — focus on blockers, today's plan
+        if "standup" in title_lower or "daily" in title_lower:
+            return (
+                "\n\nMEETING TYPE: Daily Standup\n"
+                "Focus especially on:\n"
+                "- Blockers raised by anyone\n"
+                "- Key updates that affect the team\n"
+                "- Action items to unblock people\n"
+                "Keep it very brief — standups should be short notes."
+            )
+
+        # Planning/sprint planning — focus on commitments, capacity, sprint goals
+        if "planning" in title_lower or "sprint plan" in title_lower:
+            return (
+                "\n\nMEETING TYPE: Sprint/Planning\n"
+                "Focus especially on:\n"
+                "- Sprint goal or objectives agreed\n"
+                "- Stories committed to for this sprint\n"
+                "- Capacity constraints discussed\n"
+                "- Risks or concerns raised\n"
+                "- Any scope changes or trade-offs made"
+            )
+
+        # Team meetings/all-hands — focus on announcements, decisions, updates
+        if "team meeting" in title_lower or "all hands" in title_lower or "town hall" in title_lower:
+            return (
+                "\n\nMEETING TYPE: Team Meeting / All-Hands\n"
+                "Focus especially on:\n"
+                "- Major announcements or org changes\n"
+                "- Strategic decisions communicated\n"
+                "- Action items that affect the broader team\n"
+                "- Q&A highlights\n"
+                "Capture the big picture — skip minor operational details."
+            )
+
+        # Interview — focus on candidate assessment
+        if "interview" in title_lower:
+            return (
+                "\n\nMEETING TYPE: Interview\n"
+                "Focus especially on:\n"
+                "- Candidate's key strengths demonstrated\n"
+                "- Areas of concern or gaps\n"
+                "- Specific answers to key questions\n"
+                "- Overall impression and recommendation\n"
+                "- Follow-up questions for next round\n"
+                "Be factual and fair. Note specific examples over general impressions."
+            )
+
+        # Office hours — focus on questions asked and answers given
+        if "office hour" in title_lower:
+            return (
+                "\n\nMEETING TYPE: Office Hours\n"
+                "Focus especially on:\n"
+                "- Questions raised and answers provided\n"
+                "- Action items that came out of discussions\n"
+                "- Topics to follow up on later\n"
+                "Group by topic if multiple subjects were covered."
+            )
+
+        return ""
