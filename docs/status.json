@@ -1,15 +1,15 @@
 {
-  "last_updated": "2026-08-07 20:45:29 PST",
+  "last_updated": "2026-08-07 20:50:30 PST",
   "agent": {
     "running": true,
-    "pid": 27802
+    "pid": 30050
   },
   "today": "2026-08-07",
   "day_of_week": "Friday",
   "recording": {
-    "recording": true,
-    "since": "2026-08-07 20:45:21",
-    "elapsed_seconds": 8
+    "recording": false,
+    "since": null,
+    "elapsed_seconds": null
   },
   "activity": {
     "meetings": [
@@ -26,8 +26,8 @@
         "duration": 904
       }
     ],
-    "chunks_recorded": 3,
-    "recordings_on_disk": 0,
+    "chunks_recorded": 4,
+    "recordings_on_disk": 1,
     "errors": [
       {
         "time": "11:27:49",
