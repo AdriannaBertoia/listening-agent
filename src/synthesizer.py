@@ -93,18 +93,36 @@ The 4 quadrants are:
 4. **Questions & Follow-ups** — Open questions, unresolved items, things to circle back on.
 
 After the 4 quadrants, produce a **My Next Steps** section that extracts ONLY the action items
-that belong to the user (the person whose meeting this is). These are things they personally
-need to do — assigned to them, or they volunteered for.
+that belong to the user.
 
-RULES:
-- Only include information that was ACTUALLY said in the transcript.
-- Do NOT fabricate action items or decisions.
-- If someone said "we should..." — only mark it as the user's action if it was clearly directed
-  at them or they explicitly agreed to own it.
-- Include people's names when mentioned.
-- Keep items concise but preserve important details (deadlines, blockers, dependencies).
-- If the transcript is mostly silence or unintelligible, say so honestly and produce minimal output.
-- Capture the general vibe/tone of the meeting if relevant (tense, productive, brainstormy, etc.).
+CRITICAL RULES FOR ACTION ITEMS AND NEXT STEPS:
+
+1. SPEAKER IDENTIFICATION:
+   - The user ({user_name}) is typically the person whose audio is clearest/loudest (closest to mic).
+   - Use calendar attendees to identify other speakers.
+   - If you cannot identify who said something, DO NOT default to assigning it to the user.
+
+2. MY NEXT STEPS (user's personal action items) — ONLY include items where:
+   - The user explicitly said "I'll...", "I can...", "Let me...", "I'll take that", "I'll follow up"
+   - Someone explicitly said "{user_name}, can you..." or "Adrianna, would you mind..."
+   - The user clearly volunteered or accepted ownership
+   
+3. DO NOT put items in "My Next Steps" if:
+   - Someone said "we should..." or "someone needs to..." (put in Questions/Follow-ups)
+   - A task was assigned to someone else (put in Action Items with THEIR name)
+   - Ownership is unclear (put in Questions/Follow-ups as "TBD: who owns this?")
+   - You're guessing or inferring (DON'T include it at all)
+
+4. ACTION ITEMS & OWNERS:
+   - Every action item MUST have a named owner. If you don't know who owns it, say "Owner: TBD"
+   - Prefer attributing tasks to the person who was asked or who volunteered
+   - Do NOT assign everything to the user by default
+
+5. GENERAL:
+   - Only include information ACTUALLY said in the transcript
+   - Do NOT fabricate, infer, or extrapolate action items
+   - It is MUCH better to have an empty "My Next Steps" section than to include a single wrong item
+   - If the transcript is unclear, say so. Don't guess.
 
 FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 
@@ -112,7 +130,7 @@ FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 [Infer a short, descriptive title for this meeting based on the content]
 
 ## Attendees
-[List names mentioned in the transcript, or "Unknown" if unclear]
+[List names mentioned in the transcript, or from calendar]
 
 ## Quadrant 1: Key Topics & Discussion
 - Topic or discussion point
@@ -123,13 +141,14 @@ FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
 
 ## Quadrant 3: Action Items & Owners
 - [ ] Action item — **Owner: [Name]** (due: [date if mentioned])
+- [ ] Another item — **Owner: TBD** (ownership unclear)
 
 ## Quadrant 4: Questions & Follow-ups
 - Open question or unresolved item (who raised it)
-- Thing to follow up on (when: [timeline])
+- "We should..." items where no one took ownership
 
 ## My Next Steps
-- [ ] Personal action item with enough context to act on it (due: [date if mentioned])
+- [ ] ONLY items {user_name} explicitly accepted or was directly asked to do
 
 ---
 
@@ -182,7 +201,10 @@ class Synthesizer:
             logger.warning("No transcript to synthesize for meeting note")
             return self._empty_meeting_result()
 
-        prompt = MEETING_NOTE_PROMPT.format(transcript=transcript) + self._build_user_context()
+        prompt = MEETING_NOTE_PROMPT.format(
+            transcript=transcript,
+            user_name=self.user_name or "the user",
+        ) + self._build_user_context()
 
         # Inject meeting-type-specific guidance
         meeting_type_guidance = self._get_meeting_type_guidance(meeting_title)
