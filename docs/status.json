@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-07 14:05:26 PST",
+  "last_updated": "2026-08-07 20:10:18 PST",
   "agent": {
     "running": true,
     "pid": 98487
@@ -9,7 +9,7 @@
   "recording": {
     "recording": true,
     "since": "2026-08-07 13:05:14",
-    "elapsed_seconds": 3612
+    "elapsed_seconds": 25504
   },
   "activity": {
     "meetings": [
@@ -27,19 +27,27 @@
       }
     ],
     "chunks_recorded": 3,
-    "recordings_on_disk": 3,
+    "recordings_on_disk": 0,
     "errors": [
-      {
-        "time": "11:20:26",
-        "message": "src.transcriber: Gemini transcription failed for chunk_20260807_110951.wav: <HttpError 400 when requ"
-      },
-      {
-        "time": "11:24:39",
-        "message": "src.transcriber: Gemini transcription failed for chunk_20260807_111506.wav: <HttpError 400 when requ"
-      },
       {
         "time": "11:27:49",
         "message": "src.transcriber: Gemini transcription failed for chunk_20260807_112021.wav: <HttpError 400 when requ"
+      },
+      {
+        "time": "15:22:31",
+        "message": "src.synthesizer: Ollama not running. Start with: ollama serve"
+      },
+      {
+        "time": "15:22:31",
+        "message": "src.synthesizer: Synthesis failed: HTTP Error 500: Internal Server Error"
+      },
+      {
+        "time": "16:34:37",
+        "message": "src.calendar_client: Failed to fetch calendar: The read operation timed out"
+      },
+      {
+        "time": "16:51:14",
+        "message": "src.next_day_note: LLM failed for next-day note: HTTP Error 500: Internal Server Error"
       }
     ]
   }
