@@ -173,7 +173,7 @@ class Synthesizer:
         )
         return context
 
-    def synthesize_meeting(self, transcript: str, calendar_context: str | None = None, meeting_history: str | None = None, meeting_title: str | None = None) -> dict:
+    def synthesize_meeting(self, transcript: str, calendar_context: str | None = None, meeting_history: str | None = None, meeting_title: str | None = None, user_notes: str | None = None) -> dict:
         """
         Process a single meeting's transcript into a quadrant-formatted note.
         Returns a dict with quadrant sections + meeting metadata.
@@ -188,6 +188,17 @@ class Synthesizer:
         meeting_type_guidance = self._get_meeting_type_guidance(meeting_title)
         if meeting_type_guidance:
             prompt += meeting_type_guidance
+
+        # Inject user's live notes as ground truth for action items
+        if user_notes:
+            prompt += (
+                "\n\nUSER'S OWN NOTES (taken during this meeting — treat as SOURCE OF TRUTH):\n"
+                "The user wrote these notes live during the meeting. These are MORE RELIABLE than "
+                "the transcript for action items and decisions. Use them as the primary source for "
+                "'My Next Steps' and 'Action Items & Owners'. The transcript provides supporting "
+                "context and discussion detail.\n\n"
+                f"{user_notes}"
+            )
 
         # Inject calendar context if available
         if calendar_context:

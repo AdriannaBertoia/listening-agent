@@ -142,6 +142,7 @@ class ListeningAgent:
         self._current_calendar_event = None
         self._declined_at: datetime | None = None
         self._declined_event_title: str | None = None
+        self._current_live_note_path: Path | None = None
 
     def start(self):
         """Start the listening agent."""
@@ -375,9 +376,15 @@ class ListeningAgent:
 
         if should_record:
             self.recorder.start()
+
+            # Create the meeting note immediately and open in Obsidian
+            self._current_live_note_path = self._create_live_meeting_note(
+                meeting_title or "Meeting", app
+            )
+
             self._send_notification(
                 title="Recording Started",
-                message=f"Recording: {meeting_title or 'Meeting'}",
+                message=f"Recording: {meeting_title or 'Meeting'} — note open in Obsidian",
             )
         else:
             logger.info("User declined recording")
@@ -437,6 +444,99 @@ class ListeningAgent:
             logger.error(f"Failed to show recording dialog: {e}")
             # If dialog fails, record anyway (don't lose data)
             return True
+
+    def _create_live_meeting_note(self, meeting_title: str, app: str | None) -> Path | None:
+        """
+        Create a meeting note immediately when recording starts.
+        Opens it in Obsidian so the user can take live notes during the meeting.
+        Returns the path to the note file.
+        """
+        import re
+
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d_%H%M")
+        safe_title = re.sub(r'[^\w\s\-]', '', meeting_title).strip().replace(" ", "-")[:50]
+        filename = f"{timestamp}_{safe_title}.md"
+
+        meetings_dir = self.writer.meetings_dir
+        note_path = meetings_dir / filename
+        note_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Get attendees from calendar
+        attendees = ""
+        if self._current_calendar_event and self._current_calendar_event.attendees:
+            attendees = ", ".join(self._current_calendar_event.attendees)
+
+        # Create the live note template
+        content = f"""---
+tags: meeting-note
+date: {now.strftime("%Y-%m-%d")}
+time: {now.strftime("%H:%M")}
+app: {app or "Meeting"}
+retain: false
+status: recording
+---
+
+# {meeting_title}
+
+**Date:** {now.strftime("%Y-%m-%d %I:%M %p")}
+**App:** {app or "Meeting"}
+**Attendees:** {attendees or "TBD"}
+
+> Recording in progress...
+
+---
+
+## My Notes
+
+_Jot down action items, decisions, and anything important here during the meeting:_
+
+- 
+- 
+- 
+
+---
+
+## Quadrant 1: Key Topics & Discussion
+_(will be filled after meeting ends)_
+
+---
+
+## Quadrant 2: Decisions Made
+_(will be filled after meeting ends)_
+
+---
+
+## Quadrant 3: Action Items & Owners
+_(will be filled after meeting ends)_
+
+---
+
+## Quadrant 4: Questions & Follow-ups
+_(will be filled after meeting ends)_
+
+---
+
+## My Next Steps
+_(will be filled after meeting ends)_
+"""
+
+        try:
+            note_path.write_text(content)
+            logger.info(f"Live meeting note created: {filename}")
+
+            # Open in Obsidian
+            vault_name = Path(self.config["obsidian"]["vault_path"]).name
+            meetings_folder = self.config["obsidian"]["meetings_folder"]
+            file_path = f"{meetings_folder}/{filename}".replace(".md", "")
+            obsidian_uri = f"obsidian://open?vault={vault_name}&file={file_path}"
+            subprocess.run(["open", obsidian_uri], capture_output=True, timeout=5)
+            logger.info(f"Opened note in Obsidian: {meeting_title}")
+
+            return note_path
+        except Exception as e:
+            logger.error(f"Failed to create live meeting note: {e}")
+            return None
 
     def _handle_meeting_end(self):
         """Called when a meeting ends. Generates a per-meeting quadrant note."""
@@ -498,20 +598,36 @@ class ListeningAgent:
 
         self._current_calendar_event = None
 
+        # Read user's live notes from the existing meeting note (if they wrote any)
+        user_live_notes = ""
+        if self._current_live_note_path and self._current_live_note_path.exists():
+            user_live_notes = self._extract_live_notes(self._current_live_note_path)
+            if user_live_notes:
+                logger.info(f"Found user's live notes ({len(user_live_notes)} chars)")
+
         meeting_synthesis = self.synthesizer.synthesize_meeting(
             transcript_text,
             calendar_context=calendar_context,
             meeting_history=meeting_history,
             meeting_title=meeting_title,
+            user_notes=user_live_notes,
         )
 
         # Store this meeting in memory for future recurrence
         self.meeting_memory.store_meeting(meeting_synthesis, calendar_title=meeting_title)
 
-        # Write the meeting note to Obsidian (include transcript)
-        note_path = self.writer.write_meeting_note(
-            meeting_synthesis, app_name=app, transcript=transcript_text
-        )
+        # Update the existing live note with quadrant sections + transcript
+        if self._current_live_note_path and self._current_live_note_path.exists():
+            note_path = self._finalize_live_note(
+                self._current_live_note_path, meeting_synthesis, transcript_text
+            )
+        else:
+            # Fallback: create a new note (shouldn't happen normally)
+            note_path = self.writer.write_meeting_note(
+                meeting_synthesis, app_name=app, transcript=transcript_text
+            )
+
+        self._current_live_note_path = None
 
         if note_path:
             title = meeting_synthesis.get("meeting_title", "Meeting")
@@ -733,6 +849,100 @@ class ListeningAgent:
                 logger.debug(f"Ollama speaker mapping failed: {e}")
 
         return None
+
+    def _extract_live_notes(self, note_path: Path) -> str:
+        """Extract the user's handwritten notes from the live meeting note."""
+        try:
+            content = note_path.read_text()
+            # Find the "## My Notes" section and extract its content
+            import re
+            match = re.search(
+                r'## My Notes\n(.*?)(?=\n---|\n## Quadrant)',
+                content,
+                re.DOTALL,
+            )
+            if match:
+                notes = match.group(1).strip()
+                # Remove the placeholder text
+                notes = notes.replace(
+                    "_Jot down action items, decisions, and anything important here during the meeting:_",
+                    "",
+                ).strip()
+                # Remove empty bullet placeholders
+                lines = [l for l in notes.split("\n") if l.strip() not in ("- ", "-", "")]
+                return "\n".join(lines)
+        except Exception as e:
+            logger.warning(f"Failed to extract live notes: {e}")
+        return ""
+
+    def _finalize_live_note(self, note_path: Path, synthesis: dict, transcript: str) -> Path:
+        """
+        Update the existing live meeting note with quadrant sections from synthesis.
+        Preserves the user's live notes and replaces placeholder sections.
+        """
+        try:
+            content = note_path.read_text()
+
+            # Remove the "Recording in progress..." indicator
+            content = content.replace("> Recording in progress...\n", "")
+            content = content.replace("status: recording", "status: complete")
+
+            # Build quadrant content
+            key_topics = "\n".join(f"- {t}" for t in synthesis.get("key_topics", [])) or "- (none captured)"
+            decisions = "\n".join(f"- {d}" for d in synthesis.get("decisions", [])) or "- (none captured)"
+            action_items = "\n".join(f"- [ ] {a}" for a in synthesis.get("action_items", [])) or "- (none captured)"
+            questions = "\n".join(f"- {q}" for q in synthesis.get("questions_followups", [])) or "- (none captured)"
+            next_steps = "\n".join(f"- [ ] {s}" for s in synthesis.get("my_next_steps", [])) or "- (none)"
+
+            # Replace placeholder sections
+            import re
+
+            content = re.sub(
+                r'## Quadrant 1: Key Topics & Discussion\n_\(will be filled after meeting ends\)_',
+                f'## Quadrant 1: Key Topics & Discussion\n{key_topics}',
+                content,
+            )
+            content = re.sub(
+                r'## Quadrant 2: Decisions Made\n_\(will be filled after meeting ends\)_',
+                f'## Quadrant 2: Decisions Made\n{decisions}',
+                content,
+            )
+            content = re.sub(
+                r'## Quadrant 3: Action Items & Owners\n_\(will be filled after meeting ends\)_',
+                f'## Quadrant 3: Action Items & Owners\n{action_items}',
+                content,
+            )
+            content = re.sub(
+                r'## Quadrant 4: Questions & Follow-ups\n_\(will be filled after meeting ends\)_',
+                f'## Quadrant 4: Questions & Follow-ups\n{questions}',
+                content,
+            )
+            content = re.sub(
+                r'## My Next Steps\n_\(will be filled after meeting ends\)_',
+                f'## My Next Steps\n{next_steps}',
+                content,
+            )
+
+            # Append collapsible transcript
+            if transcript:
+                content += f"""
+---
+
+<details>
+<summary><strong>Full Transcript</strong></summary>
+
+{transcript}
+
+</details>
+"""
+
+            note_path.write_text(content)
+            logger.info(f"Finalized live meeting note: {note_path.name}")
+            return note_path
+
+        except Exception as e:
+            logger.error(f"Failed to finalize live note: {e}")
+            return note_path
 
     def _ask_quick_edit(self, meeting_title: str) -> str | None:
         """
