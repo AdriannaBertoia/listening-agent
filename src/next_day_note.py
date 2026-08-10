@@ -212,6 +212,11 @@ class NextDayNoteGenerator:
             if recurring_items:
                 content = self._ensure_recurring_items(content, recurring_items)
 
+        # Force-generate priorities if LLM left them blank
+        content = self._ensure_priorities(
+            content, carry_forward_todos or [], tomorrow_meetings or []
+        )
+
         # Write the note
         try:
             note_path.parent.mkdir(parents=True, exist_ok=True)
@@ -484,6 +489,70 @@ top_priority: {priorities[0] if priorities[0] else ''}
                     # Fallback: add before the To-Dos section end
                     content += f"\n- [ ] {item}\n"
                 logger.info(f"Force-added recurring item: {clean_item}")
+        return content
+
+    def _ensure_priorities(self, content: str, todos: list[str], meetings: list[dict]) -> str:
+        """
+        Ensure Top 3 Priorities are filled in.
+        If the LLM left them blank, intelligently pick from:
+        1. Recurring items with specific times (deadline-driven)
+        2. Meetings that need prep
+        3. Carry-forward todos (most overdue = highest priority)
+        """
+        import re
+
+        # Check if priorities are blank
+        priorities_match = re.search(
+            r'## Top 3 Priorities\n\n1\.\s*(.*?)\n2\.\s*(.*?)\n3\.\s*(.*?)\n',
+            content,
+        )
+
+        if priorities_match:
+            p1, p2, p3 = priorities_match.group(1).strip(), priorities_match.group(2).strip(), priorities_match.group(3).strip()
+            if p1 and p2 and p3:
+                return content  # Already filled
+
+        # Generate priorities from available data
+        candidates = []
+
+        # Recurring items with times are deadline-driven (highest priority)
+        for todo in todos:
+            if "[RECURRING]" in todo and "@" in todo:
+                clean = todo.replace("[RECURRING] ", "")
+                candidates.append(clean)
+
+        # Important meetings to prep for
+        for meeting in meetings:
+            title = meeting.get("title", "")
+            if title and title.lower() not in ("arlo", "lunch", "private appointment"):
+                candidates.append(f"Prepare for: {title}")
+
+        # Remaining carry-forward todos (non-recurring)
+        for todo in todos:
+            if "[RECURRING]" not in todo and todo not in candidates:
+                candidates.append(todo)
+
+        # Pick top 3
+        priorities = candidates[:3]
+        while len(priorities) < 3:
+            priorities.append("")
+
+        # Replace in content
+        old_section = re.search(
+            r'(## Top 3 Priorities\n\n)1\..*?\n2\..*?\n3\..*?\n',
+            content,
+            re.DOTALL,
+        )
+        if old_section:
+            new_section = (
+                f"## Top 3 Priorities\n\n"
+                f"1. {priorities[0]}\n"
+                f"2. {priorities[1]}\n"
+                f"3. {priorities[2]}\n"
+            )
+            content = content[:old_section.start()] + new_section + content[old_section.end():]
+            logger.info(f"Force-generated priorities: {priorities}")
+
         return content
 
     def _build_meetings_table(self, meetings: list[dict] | None) -> str:
