@@ -1,11 +1,11 @@
 {
-  "last_updated": "2026-08-09 23:57:42 PST",
+  "last_updated": "2026-08-10 00:02:43 PST",
   "agent": {
     "running": true,
     "pid": 30050
   },
-  "today": "2026-08-09",
-  "day_of_week": "Sunday",
+  "today": "2026-08-10",
+  "day_of_week": "Monday",
   "recording": {
     "recording": false,
     "since": null,
@@ -15,11 +15,6 @@
     "meetings": [],
     "chunks_recorded": 0,
     "recordings_on_disk": 1,
-    "errors": [
-      {
-        "time": "15:11:12",
-        "message": "src.transcriber: Gemini transcription failed for chunk_20260807_204521.wav: <HttpError 400 when requ"
-      }
-    ]
+    "errors": []
   }
 }
