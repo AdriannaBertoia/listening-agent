@@ -648,9 +648,18 @@ top_priority: {priorities[0] if priorities[0] else ''}
         }
 
     def _extract_incomplete_todos(self, content: str) -> list[str]:
-        """Find all unchecked checkbox items in the note."""
+        """Find all unchecked checkbox items in the note.
+        Filters out day-specific recurring items that shouldn't carry forward."""
         todos = []
         in_todos_section = False
+
+        # Day-specific recurring items that should NOT carry forward
+        day_specific_recurring = [
+            "input time on the timesheet",
+            "create momentum report",
+            "send momentum report",
+            "deep focus — momentum report",
+        ]
 
         for line in content.split("\n"):
             stripped = line.strip()
@@ -668,6 +677,11 @@ top_priority: {priorities[0] if priorities[0] else ''}
                 item = stripped[5:].strip()
                 # Skip empty placeholders
                 if item and item not in ("", "-"):
+                    # Skip day-specific recurring items (they get re-added on their scheduled day)
+                    if "[RECURRING]" in item:
+                        item_lower = item.lower()
+                        if any(ds in item_lower for ds in day_specific_recurring):
+                            continue
                     todos.append(item)
 
         return todos

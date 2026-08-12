@@ -387,25 +387,18 @@ class ListeningAgent:
                 message=f"Recording: {meeting_title or 'Meeting'} — note open in Obsidian",
             )
         else:
-            logger.info("User declined recording")
-            # Reset state so meeting_end doesn't try to generate a note
+            logger.info("User declined recording — will not ask again for this meeting")
             self._meeting_start_time = None
             self._current_calendar_event = None
-            # Track when this decline happened so we can re-prompt later
-            # if a new calendar event starts while Teams stays active
             self._declined_at = datetime.now()
             self._declined_event_title = meeting_title
-            # Reset the watcher so it can detect a new meeting later
-            # (e.g. if user stays in Teams but starts a different call)
-            self.watcher.is_in_meeting = False
-            self.watcher._debounce_triggered = False
-            self.watcher._active_since = None
+            # Don't reset the watcher — this prevents re-asking during same meeting
 
     def _ask_to_record(self, meeting_title: str | None, app: str | None) -> bool:
         """
-        Ask the user if they want to record via the Focus web app.
-        Writes a prompt file that the app polls, waits for a response file.
-        Falls back to macOS dialog if the app doesn't respond within 20 seconds.
+        Ask the user if they want to record via the Focus web app only.
+        Writes a prompt file that the app polls, waits for a response.
+        If no response within 30 seconds, defaults to skip.
         """
         import json
 
@@ -413,13 +406,11 @@ class ListeningAgent:
         prompt_file = base_dir / "data" / "recording-prompt.json"
         response_file = base_dir / "data" / "recording-response.json"
 
-        # Clear any old response
         try:
             response_file.unlink()
         except FileNotFoundError:
             pass
 
-        # Write the prompt for the web app
         prompt_data = {
             "meetingTitle": meeting_title,
             "app": app,
@@ -429,8 +420,8 @@ class ListeningAgent:
         prompt_file.write_text(json.dumps(prompt_data))
         logger.info("Recording prompt sent to web app")
 
-        # Poll for response (check every 2 seconds, timeout after 20s)
-        for _ in range(10):
+        # Poll for response (check every 2 seconds, timeout after 30s)
+        for _ in range(15):
             time.sleep(2)
             if response_file.exists():
                 try:
@@ -440,57 +431,22 @@ class ListeningAgent:
                         prompt_file.unlink()
                     except FileNotFoundError:
                         pass
-
                     if response.get("action") == "record":
-                        logger.info("User chose to record (via app)")
+                        logger.info("User chose to record")
                         return True
                     else:
-                        logger.info("User chose to skip (via app)")
+                        logger.info("User chose to skip")
                         return False
                 except Exception:
                     pass
 
-        # Timeout — clean up and fall back to macOS dialog
+        # Timeout — default to skip
         try:
             prompt_file.unlink()
         except FileNotFoundError:
             pass
-
-        logger.info("Web app didn't respond — trying macOS dialog")
-        return self._ask_to_record_macos(meeting_title, app)
-
-    def _ask_to_record_macos(self, meeting_title: str | None, app: str | None) -> bool:
-        """Fallback: show macOS dialog via helper script."""
-        if meeting_title:
-            message = f'"{meeting_title}"'
-        else:
-            message = f"Meeting detected in {app or 'Teams'}"
-
-        try:
-            script_path = Path(self.config.get("_base_dir", ".")) / "record_prompt.sh"
-            result = subprocess.run(
-                ["launchctl", "asuser", str(os.getuid()), str(script_path), message],
-                capture_output=True,
-                text=True,
-                timeout=20,
-            )
-
-            output = result.stdout.strip()
-            if "RECORD" in output:
-                logger.info("User chose to record (macOS dialog)")
-                return True
-            elif "TIMEOUT" in output:
-                logger.info("Dialog timed out — skipping")
-                return False
-            else:
-                logger.info("User chose to skip (macOS dialog)")
-                return False
-
-        except subprocess.TimeoutExpired:
-            return False
-        except Exception as e:
-            logger.error(f"Dialog failed: {e}")
-            return True
+        logger.info("No response from app — skipping recording")
+        return False
 
     def _create_live_meeting_note(self, meeting_title: str, app: str | None) -> Path | None:
         """
@@ -689,20 +645,7 @@ _(will be filled after meeting ends)_
                 # Send a follow-up review prompt after a short delay
                 self._send_review_prompt(note_path, title)
 
-            # Quick edit popup — capture a thought while it's fresh
-            quick_note = self._ask_quick_edit(title)
-            if quick_note:
-                self._append_quick_note(note_path, quick_note)
-
-            # Show proposed next steps for approval before adding to daily note
-            if meeting_synthesis.get("my_next_steps"):
-                approved_steps = self._approve_next_steps(meeting_synthesis["my_next_steps"])
-                if approved_steps:
-                    next_steps_synthesis = {"action_items": approved_steps}
-                    self.writer.write_synthesis(next_steps_synthesis)
-                    logger.info(f"Added {len(approved_steps)} approved next steps to daily note")
-                else:
-                    logger.info("No next steps approved — skipping")
+            # No auto-adding to daily note — user's live notes are the source of truth
         else:
             logger.warning("Failed to generate meeting note")
 
@@ -995,131 +938,8 @@ _(will be filled after meeting ends)_
             logger.error(f"Failed to finalize live note: {e}")
             return note_path
 
-    def _approve_next_steps(self, proposed_steps: list[str]) -> list[str]:
-        """
-        Show proposed next steps and let the user approve which ones are actually theirs.
-        Returns only the approved items.
-        """
-        if not proposed_steps:
-            return []
 
-        # Build a numbered list for the dialog
-        items_text = "\\n".join(f"{i+1}. {step}" for i, step in enumerate(proposed_steps))
-        message = (
-            f"Proposed action items for you:\\n\\n"
-            f"{items_text}\\n\\n"
-            f"Enter numbers to keep (e.g. 1,3) or 'all' or 'none':"
-        )
 
-        try:
-            script_path = Path(self.config.get("_base_dir", ".")) / "record_prompt.sh"
-            # Use a text input dialog instead of the record prompt
-            script = (
-                'tell application "System Events" to activate\n'
-                f'display dialog "{message}" '
-                f'default answer "all" '
-                f'buttons {{"None", "Keep Selected"}} default button "Keep Selected" '
-                f'with title "Review: My Next Steps" '
-                f'giving up after 60'
-            )
-            result = subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True,
-                text=True,
-                timeout=65,
-            )
-
-            output = result.stdout.strip()
-
-            if "None" in output and "text returned:" not in output:
-                logger.info("User rejected all next steps")
-                return []
-
-            if "gave up:true" in output:
-                logger.info("Approval timed out — keeping all steps")
-                return proposed_steps
-
-            # Extract the text response
-            if "text returned:" in output:
-                response = output.split("text returned:")[1].strip().rstrip(",").strip()
-                if response.lower() == "none":
-                    return []
-                if response.lower() == "all":
-                    return proposed_steps
-                # Parse numbers
-                try:
-                    indices = [int(x.strip()) - 1 for x in response.split(",")]
-                    approved = [proposed_steps[i] for i in indices if 0 <= i < len(proposed_steps)]
-                    return approved
-                except (ValueError, IndexError):
-                    # Can't parse — keep all
-                    return proposed_steps
-
-        except Exception as e:
-            logger.warning(f"Next steps approval dialog failed: {e}")
-            # If dialog fails, keep all (don't lose data)
-            return proposed_steps
-
-        return proposed_steps
-
-    def _ask_quick_edit(self, meeting_title: str) -> str | None:
-        """
-        Show a text input dialog after a meeting note is generated.
-        Lets the user jot down one quick thought while it's fresh.
-        Returns the text or None if skipped/timed out.
-        """
-        try:
-            script = (
-                'tell application "System Events"\n'
-                '  activate\n'
-                'end tell\n'
-                f'display dialog "Quick thought about \\"{meeting_title}\\"?\\n\\n'
-                f'(Leave blank to skip)" '
-                f'default answer "" '
-                f'buttons {{"Skip", "Add"}} default button "Add" '
-                f'with title "Meeting Note — Quick Edit" '
-                f'giving up after 30'
-            )
-            result = subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True,
-                text=True,
-                timeout=35,
-            )
-
-            output = result.stdout.strip()
-            if "gave up:true" in output or "Skip" in output:
-                return None
-
-            # Extract the text entered
-            if "text returned:" in output:
-                text = output.split("text returned:")[1].strip().rstrip(",")
-                if text:
-                    logger.info(f"Quick note added: {text[:50]}...")
-                    return text
-
-        except Exception as e:
-            logger.debug(f"Quick edit dialog failed: {e}")
-
-        return None
-
-    def _append_quick_note(self, note_path: Path, note_text: str):
-        """Append a quick note to the meeting note file."""
-        try:
-            content = note_path.read_text()
-            timestamp = datetime.now().strftime("%I:%M %p")
-            addition = f"\n\n---\n\n## Quick Note ({timestamp})\n\n{note_text}\n"
-
-            # Insert before the transcript section if it exists
-            if "<details>" in content:
-                content = content.replace("<details>", f"{addition}\n<details>")
-            else:
-                content += addition
-
-            note_path.write_text(content)
-            logger.info("Quick note appended to meeting note")
-        except Exception as e:
-            logger.warning(f"Failed to append quick note: {e}")
 
     def _transcribe_pending_chunks(self):
         """Transcribe any completed audio chunks that haven't been processed."""
